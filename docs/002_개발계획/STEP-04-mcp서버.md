@@ -12,7 +12,7 @@
 - `scout_net_mcp/providers/npm.py` — `npm_search` `npm_package`
 - `scout_net_mcp/providers/pypi.py` — `pypi_package`
 - `scout_net_mcp/providers/github.py` — `github_repo_health`
-- `scout_net_mcp/providers/search.py` — `web_search` (DDG, **교체 지점**)
+- `scout_net_mcp/providers/search.py` — `web_search` (`ddgs` + Google backend, **교체 지점**)
 - `tests/test_egress.py`
 
 ## 완료 기준
@@ -36,10 +36,18 @@ DDG 패키지 이름이 `duckduckgo-search` → `ddgs`로 개칭된 이력. `uv 
 GitHub 토큰 없으면 60req/h — 후보 10개면 1회는 되지만 반복하면 소진된다.
 
 **구현 중 발견한 것**: `ddgs`(옛 duckduckgo-search)는 `backend` 인자를 안 주면
-`"auto"`로 bing·google·mojeek·wikipedia·grokipedia까지 섞어 쓴다 — 설계 문서가
-정한 "DuckDuckGo" 하나만 쓰겠다는 결정과 어긋난다. `backend="duckduckgo"`로
-고정했다. 실제로 맞는 호스트는 `duckduckgo.com`이 아니라 `html.duckduckgo.com`이라
-`SCOUT_EGRESS_ALLOWLIST` 기본값도 그에 맞춰 고쳤다(`.env.example`,
-`scout_net_mcp/config.py`). 다만 `ddgs`는 자체 HTTP 클라이언트(`primp`)로 요청해서
-`check_allowed()`가 그 요청을 실제로 가로막지는 못한다 — allowlist·감사로그
-관점에서 상징적인 체크임을 `providers/search.py`에 주석으로 남겼다.
+`"auto"`로 bing·google·mojeek·wikipedia·grokipedia까지 섞어 쓴다 — 재현성이
+없어서 못 쓴다. 처음엔 패키지 이름을 따라 `backend="duckduckgo"`로 고정했는데,
+"패키지 선택과 검색엔진 선택은 별개다, 목적에 더 잘 맞는 걸 써라"는 지적을
+받고 두 시나리오로 실제 결과 품질을 비교했다: `duckduckgo`는 한 시나리오에서
+아예 결과 0건이 나왔고, `google`은 두 시나리오 다 Hacker News·Reddit 토론
+스레드를 포함해 "이 방법이 실제로 괜찮은가"를 판단할 근거로 가장 값어치
+있었다. 최종적으로 `backend="google"`로 바꿨다 — 자세한 비교는
+[001/CHANGELOG v15](../001_기술스택-조사-에이전트-설계/CHANGELOG.md).
+
+실제로 맞는 호스트는 검색엔진에 따라 다르다(`html.duckduckgo.com`이 아니라
+`www.google.com`) — `SCOUT_EGRESS_ALLOWLIST` 기본값도 그에 맞춰 고쳤다
+(`.env.example`, `scout_net_mcp/config.py`). 다만 `ddgs`는 자체 HTTP
+클라이언트(`primp`)로 요청해서 `check_allowed()`가 그 요청을 실제로
+가로막지는 못한다 — allowlist·감사로그 관점에서 상징적인 체크임을
+`providers/search.py`에 주석으로 남겼다.

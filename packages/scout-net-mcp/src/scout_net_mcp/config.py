@@ -8,8 +8,7 @@ class Settings(BaseSettings):
 
     github_token: str | None = None
     scout_egress_allowlist: str = (
-        "registry.npmjs.org,api.npmjs.org,pypi.org,api.github.com,"
-        "api.osv.dev,html.duckduckgo.com"
+        "registry.npmjs.org,api.npmjs.org,pypi.org,api.github.com,api.osv.dev,www.google.com"
     )
     scout_cache_dir: str = ".cache/scout-net"
     scout_cache_ttl_hours: int = 24

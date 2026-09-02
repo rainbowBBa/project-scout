@@ -6,6 +6,34 @@
 
 ---
 
+## v15 (2026-09-02) — web_search: DuckDuckGo → `ddgs` + Google backend
+
+STEP-04 구현 때 `providers/search.py`를 `ddgs.text(..., backend="duckduckgo")`로
+고정했다 — `ddgs`(옛 `duckduckgo-search`) 패키지 이름과 04-아키텍처.md의 "검색
+엔진: DuckDuckGo" 결정을 그대로 따른 것이었다. 사용자가 바로잡았다: 패키지
+선택(`ddgs`)과 그 안에서 쓸 검색엔진(backend)은 별개 결정이고, 후자는 **목적에
+더 잘 맞는 걸로 고르라**는 지시였다.
+
+`method` 후보(아키텍처 패턴·개발 접근법)의 유일한 근거라는 목적에 맞춰 실제
+결과 품질을 두 시나리오로 비교했다:
+
+- `duckduckgo` backend — 한 시나리오는 결과 0건("No results found"), 나머지도
+  LinkedIn pulse·일반 블로그 위주로 신호가 약했다
+- `bing` backend — 두 시나리오 다 결과가 나왔고 품질 있는 전문 블로그를 포함했다
+- `google` backend — 두 시나리오 다 결과가 나왔고 Hacker News·Reddit 토론
+  스레드를 일관되게 포함했다 — "이 방법이 실제로 괜찮은가"를 판단하는 근거로
+  가장 값어치 있는 소스다
+
+`google`로 바꿨다. 사설 스크래핑이라 차단 위험이 이론상 더 크지만, 프로토타입
+규모(실행당 질의 몇 건)에서는 품질·커버리지 이득이 더 크다고 판단했다.
+`SCOUT_EGRESS_ALLOWLIST` 기본값도 실제 요청 호스트(`www.google.com`)에 맞춰
+다시 고쳤다 — v14 이전에 한 번 `html.duckduckgo.com`으로 고쳤던 것도 이번에
+같이 정정된다.
+
+`04-아키텍처.md`의 "기술 결정"·"MCP 툴 6종" 표를 이 버전 기준으로 갱신했다.
+
+---
+
 ## v14 (2026-09-02) — CLI: 서브커맨드 없는 기본 진입점 + 단계별 배너
 
 지금까지 `scout run "설명"`으로 설명을 인자로 넘겨야 했고, `graph.invoke()`로
