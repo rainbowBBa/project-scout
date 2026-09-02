@@ -1,20 +1,29 @@
 import asyncio
 import json
 import os
+from datetime import UTC, datetime
 from enum import Enum
+from pathlib import Path
+from typing import Annotated
 
 import boto3
 import typer
 from dotenv import load_dotenv
 from langchain_aws import __version__ as langchain_aws_version
+from langgraph.checkpoint.sqlite import SqliteSaver
 from pydantic import ValidationError
 
 from scout import store
 from scout.config import Settings
+from scout.graph import build_graph, make_slug
 from scout.llm import make_llm
 from scout.mcp_client import make_mcp_client
 
 app = typer.Typer()
+
+# 파이프라인 6단계 전체 이름. 아직 구현된 노드만 IMPLEMENTED_STAGES에 있다 — STEP이 끝날 때마다 하나씩 늘어난다.
+STAGE_ORDER = ["interview", "analyze", "search", "verify", "evaluate", "report"]
+IMPLEMENTED_STAGES = ["interview"]
 
 
 class ShowStage(str, Enum):
@@ -23,6 +32,15 @@ class ShowStage(str, Enum):
     search = "search"
     verify = "verify"
     evaluate = "evaluate"
+
+
+class Stage(str, Enum):
+    interview = "interview"
+    analyze = "analyze"
+    search = "search"
+    verify = "verify"
+    evaluate = "evaluate"
+    report = "report"
 
 
 @app.callback()
@@ -113,6 +131,62 @@ async def _mcp_smoke() -> None:
         )
     except Exception as e:  # noqa: BLE001 — doctor는 원인 불문 다음 확인으로 넘어가야 한다
         typer.echo(f"[FAIL] MCP 스모크 실패: {e}")
+
+
+@app.command()
+def run(
+    description: str,
+    from_stage: Annotated[
+        Stage, typer.Option("--from", help="이 단계부터 실행한다")
+    ] = Stage.interview,
+    stop_after: Annotated[
+        Stage | None, typer.Option("--stop-after", help="이 단계까지만 실행한다")
+    ] = None,
+    max_components: Annotated[int | None, typer.Option("--max-components")] = None,
+    max_candidates: Annotated[int | None, typer.Option("--max-candidates")] = None,
+) -> None:
+    """설명 한 줄로 파이프라인을 실행한다. interview부터 시작해 되묻고 runs에 저장한다."""
+    for stage in (from_stage, stop_after):
+        if stage is not None and stage.value not in IMPLEMENTED_STAGES:
+            typer.echo(
+                f"[미구현] '{stage.value}' 단계는 아직 없다 — "
+                f"지금 구현된 단계: {', '.join(IMPLEMENTED_STAGES)}"
+            )
+            raise typer.Exit(code=1)
+
+    try:
+        settings = Settings()
+    except ValidationError as e:
+        typer.echo(f"[FAIL] Settings 로딩 실패 — 필수 변수를 확인하세요:\n{e}")
+        raise typer.Exit(code=1) from None
+
+    if max_components is not None:
+        settings.scout_max_components = max_components
+    if max_candidates is not None:
+        settings.scout_max_candidates = max_candidates
+
+    slug = make_slug(description, today=datetime.now(UTC).date().isoformat())
+    llm = make_llm(settings)
+
+    checkpoint_path = f"{settings.scout_runs_dir}/{slug}/checkpoints.sqlite"
+    Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
+
+    initial_state = {
+        "slug": slug,
+        "description": description,
+        "max_components": settings.scout_max_components,
+        "max_candidates": settings.scout_max_candidates,
+    }
+    with SqliteSaver.from_conn_string(checkpoint_path) as checkpointer:
+        graph = build_graph(llm, checkpointer)
+        result = graph.invoke(
+            initial_state, config={"configurable": {"thread_id": slug}}
+        )
+
+    typer.echo(f"\n[OK] slug={slug}")
+    typer.echo(
+        json.dumps(result["interview"].model_dump(), ensure_ascii=False, indent=2)
+    )
 
 
 @app.command()

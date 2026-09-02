@@ -43,6 +43,7 @@ interview → analyze → search → verify → evaluate → report
 |---|---|
 | 단계 로직 | `packages/scout/src/scout/stages/<단계>.py` |
 | Pydantic 스키마 | `scout/schemas.py` (전 단계 공용) |
+| LLM 프롬프트 | `scout/prompts.py` (전 단계 공용, `ChatPromptTemplate`) |
 | sqlite DDL·CRUD | `scout/store.py` (ORM 없음) |
 | 점수 공식 | `scout/rubric.py` |
 | 인용 검증 | `scout/grounding.py` |
@@ -93,8 +94,12 @@ interview → analyze → search → verify → evaluate → report
 ### LLM 구조화 출력
 
 ```python
-chain = llm.with_structured_output(Model, include_raw=True)
-# 파싱 실패 시 raw 를 잡아 1회 재시도. Verdict 처럼 필드 많은 스키마에서 특히 필요
+from scout.prompts import STAGE_PROMPT   # prompts.py — 프롬프트 문자열은 여기, 조립 로직만 stages/에
+
+structured_llm = llm.with_structured_output(Model, include_raw=True)
+chain = STAGE_PROMPT | structured_llm    # prompt | llm — 스키마는 API에 tool로 전달, 프롬프트엔 안 적는다
+result = chain.invoke(prompt_input)
+# result["parsed"] 가 None이면 raw 를 잡아 1회 재시도. Verdict 처럼 필드 많은 스키마에서 특히 필요
 ```
 
 프롬프트에는 **앵커(반례)를 박는다.** "판단해라"만 쓰면 judge가 후하게 준다 —
