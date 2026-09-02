@@ -1,0 +1,21 @@
+# STEP 03 · analyze
+
+> 개발에 필요한 요소를 도출하고 `necessity`·`priority`를 매긴다.
+> 전부 저장하고 상위 3개만 다음 STEP으로 통과시킨다. LLM 1회. MCP 불필요.
+
+**선행** STEP 02 · **시간** ~1h · **설계** [stages/1-analyze](../001_기술스택-조사-에이전트-설계/stages/1-analyze.md)
+
+## 만들 것
+- `scout/stages/analyze.py` (도메인 힌트 문자열 포함)
+- `scout/graph.py` — `analyze` 노드 + 조건 엣지(요소 0개면 조기 종료)
+
+## 완료 기준
+- [ ] `components` 6~10행이 생긴다 (걸러진 것까지 전부 저장)
+- [ ] `necessity`가 `unnecessary` 또는 `defer`인 요소가 **최소 1개** 있다
+- [ ] `necessity_reason`에 제약조건 숫자("200명", "3인 팀")가 인용된다
+- [ ] `kind` 5종 중 최소 3종이 등장한다 (배포·운영을 빠뜨리지 않는지)
+- [ ] `--max-components 3` 이 통과 요소를 3개로 제한한다
+
+## 막히면
+전부 `essential`로 나오면 프롬프트에 "더 단순한 대안이 있는지 먼저 검토하라"를 추가.
+`non_goals`를 프롬프트에 넣었는지 확인 — 걸러내기의 가장 강한 신호다.
