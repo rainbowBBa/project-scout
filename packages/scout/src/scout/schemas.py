@@ -29,6 +29,10 @@ class Component(BaseModel):
     search_hints: list[str] = Field(default_factory=list)
 
 
+class Analysis(BaseModel):
+    components: list[Component]
+
+
 class Fact(BaseModel):
     id: str
     label: str

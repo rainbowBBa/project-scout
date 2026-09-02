@@ -23,7 +23,7 @@ app = typer.Typer()
 
 # 파이프라인 6단계 전체 이름. 아직 구현된 노드만 IMPLEMENTED_STAGES에 있다 — STEP이 끝날 때마다 하나씩 늘어난다.
 STAGE_ORDER = ["interview", "analyze", "search", "verify", "evaluate", "report"]
-IMPLEMENTED_STAGES = ["interview"]
+IMPLEMENTED_STAGES = ["interview", "analyze"]
 
 
 class ShowStage(str, Enum):
@@ -187,6 +187,17 @@ def run(
     typer.echo(
         json.dumps(result["interview"].model_dump(), ensure_ascii=False, indent=2)
     )
+    if "components" in result:
+        typer.echo(
+            "\n[components] (search로 통과된 요소 — 걸러진 것은 show analyze로 확인)"
+        )
+        typer.echo(
+            json.dumps(
+                [c.model_dump() for c in result["components"]],
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
 
 
 @app.command()

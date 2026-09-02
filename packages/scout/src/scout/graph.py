@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from langgraph.graph import END, START, StateGraph
 
+from scout.stages import analyze as analyze_stage
 from scout.stages import interview as interview_stage
 from scout.state import ScoutState
 
@@ -25,8 +26,10 @@ def build_graph(llm: ChatBedrockConverse, checkpointer: BaseCheckpointSaver):
     graph.add_node(
         "interview", lambda state: interview_stage.interview_node(state, llm=llm)
     )
+    graph.add_node("analyze", lambda state: analyze_stage.analyze_node(state, llm=llm))
     graph.add_edge(START, "interview")
-    graph.add_edge("interview", END)
+    graph.add_edge("interview", "analyze")
+    graph.add_edge("analyze", END)
     return graph.compile(checkpointer=checkpointer)
 
 
