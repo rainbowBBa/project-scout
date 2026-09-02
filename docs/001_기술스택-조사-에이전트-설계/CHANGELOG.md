@@ -6,6 +6,27 @@
 
 ---
 
+## v11 (2026-09-02) — `python-dotenv`로 boto3 크레덴셜 간극을 메움
+
+`.env`에 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`를 채우고 `doctor`를 돌렸는데도
+"미설정"으로 나왔다. 원인: `pydantic-settings`의 `env_file` 로딩은 **`Settings` 필드에만**
+값을 채우고 `os.environ`은 안 건드린다. `boto3`는 `.env` 파일을 아예 모르고 `os.environ`만
+읽으므로, 규칙 2에 따라 `Settings` 필드가 아닌 크레덴셜은 `.env`에 있어도 `boto3`가 못 찾았다.
+
+v7에서 "`.env` 로딩이 내장이라 `python-dotenv`가 따로 필요 없다"고 썼던 게 **`Settings` 필드에만
+해당하는 얘기였다** — boto3처럼 `Settings`를 거치지 않고 `os.environ`을 직접 읽는 라이브러리는
+예외였다. 실측(`doctor` 실행)으로 드러남.
+
+- `scout` 패키지에 `python-dotenv` 명시 의존성 추가 (`pydantic-settings`의 전이 의존성으로
+  이미 설치돼 있었지만, 코드가 직접 import하므로 명시해야 안전하다)
+- `scout/cli.py`의 `@app.callback()`에서 `load_dotenv()`를 서브커맨드 실행 전에 호출
+- `08-설정.md`에 "★ `boto3`는 `.env`를 모른다" 절 추가
+
+이 절 하나로 STEP-00의 남은 완료 기준 2개(`ListFoundationModels`, Sonnet 1회+4병렬 호출)가
+실제 AWS 계정으로 통과했다.
+
+---
+
 ## v10 (2026-09-02) — Bedrock 인증을 Access Key 방식으로 확정
 
 [07-검증](07-검증.md) M0 7번이 미결이었던 질문("사내 계정이 SigV4인지 Bedrock API key인지")이

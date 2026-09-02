@@ -19,10 +19,10 @@
 - [x] `uv sync` 성공, `uv sync --package scout-net-mcp` 가 langchain 없이 성공
 - [x] **`AWS_DEFAULT_REGION` 없이 실행하면 시작 시 실패한다** (`BaseSettings` 필수 검증)
 - [x] `SCOUT_MAX_COMPONENTS=abc` 로 두면 타입 오류로 잡힌다
-- [x] `doctor` 가 인증 방식을 찍는다 — `sts get-caller-identity` · API key **존재 여부만** · boto3/langchain-aws 버전
-- [ ] `doctor` 가 `ListFoundationModels` 로 모델 ID 형태를 확정한다 — **AWS 자격 미설정이라 미확인.**
-      `.env`에 `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`를 채운 뒤 `uv run scout doctor`로 확인
-- [ ] Sonnet 1회 호출 + **4병렬 호출** 성공 (동시 쿼터 확인) — 위와 동일한 이유로 미확인
+- [x] `doctor` 가 인증 방식을 찍는다 — `sts get-caller-identity` · Access Key **존재 여부만** · boto3/langchain-aws 버전
+- [x] `doctor` 가 `ListFoundationModels` 로 모델 ID 형태를 확정한다 —
+      `anthropic.claude-sonnet-5` 등 sonnet 계열 4개 확인, `.env`의 `SCOUT_MODEL_ID` 기본값과 일치
+- [x] Sonnet 1회 호출 + **4병렬 호출** 성공 (동시 쿼터 확인) — IAM 사용자 자격으로 실제 호출 확인
 - [x] MCP 스모크: `npm_package("socket.io")` 응답, allowlist 밖 도메인 거부
       (거부는 `tests/test_egress.py`로 검증 — allowlist 체크가 npm_package 호스트 하나뿐이라
       doctor에서 직접 거부를 재현할 수단이 없어 별도 pytest로 분리)
@@ -30,6 +30,12 @@
 - [x] `uv run ruff check` 통과, `uv run ty check` 결과 확인 (오탐 없음, 게이트 아님으로 유지)
 
 ## 막히면
-인증이 둘 다 없으면 여기서 막힌다 — 사내 계정이 SigV4인지 API key인지 먼저 확인.
-모델 ID 형태 3가지 중 무엇인지 계정마다 다름 → `doctor`가 찍은 값을 `.env`에 고정.
+인증은 Access Key(`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`)로 확정됨 — `doctor` 통과 완료.
+모델 ID 형태 3가지 중 무엇인지 계정마다 다름 → `doctor`가 찍은 값을 `.env`에 고정
+(이 계정은 `anthropic.claude-sonnet-5` 그대로 사용 가능함을 확인).
 `uv` 미설치 → `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`
+
+**참고**: `boto3`는 `.env` 파일을 모른다 — `pydantic-settings`의 `env_file` 로딩은 `Settings`
+필드에만 값을 채우고 `os.environ`은 건드리지 않는다. `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`처럼
+`Settings`에 없는 값(크레덴셜, 규칙 9)을 boto3가 집으려면 `python-dotenv`의 `load_dotenv()`로
+`.env`를 프로세스 환경에 명시적으로 올려야 한다. `scout/cli.py`의 `callback()`에서 처리.

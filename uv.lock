@@ -1006,6 +1006,7 @@ dependencies = [
     { name = "langgraph-checkpoint-sqlite" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "python-dotenv" },
     { name = "typer" },
 ]
 
@@ -1020,6 +1021,7 @@ requires-dist = [
     { name = "langgraph-checkpoint-sqlite" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "python-dotenv" },
     { name = "typer" },
 ]
 

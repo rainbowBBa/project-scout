@@ -3,6 +3,7 @@ import os
 
 import boto3
 import typer
+from dotenv import load_dotenv
 from langchain_aws import __version__ as langchain_aws_version
 from pydantic import ValidationError
 
@@ -16,6 +17,9 @@ app = typer.Typer()
 @app.callback()
 def callback() -> None:
     """project-scout — 만들고 싶은 소프트웨어를 근거와 함께 답하는 CLI."""
+    # boto3는 .env를 모른다 — os.environ에 직접 있어야 AWS_ACCESS_KEY_ID 등을 집는다.
+    # pydantic-settings의 env_file 로딩은 Settings 필드에만 값을 채우고 os.environ은 건드리지 않는다.
+    load_dotenv()
 
 
 @app.command()
