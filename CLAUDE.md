@@ -215,8 +215,9 @@ uv run ruff check --fix . && uv run ruff format .
 uv run ty check                   # 정보용. 게이트 아님 — 오탐 많으면 끈다
 uv run pytest                     # 4종
 
+uv run scout                      # 기본 진입점 — 설명을 대화형으로 입력받아 전체 파이프라인을 돈다
 uv run scout doctor               # AWS 자격·리전·모델·동시쿼터 확인
-uv run scout run "..."            # 기본 규모: 요소 3개 · 후보 8~10개
+uv run scout run "..."            # 개발용: 설명을 인자로 직접 넘긴다. 기본 규모: 요소 3개 · 후보 8~10개
 uv run scout run "..." --from verify --max-components 8
 uv run scout show <slug> verify
 ```
