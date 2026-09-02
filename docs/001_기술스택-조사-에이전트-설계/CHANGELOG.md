@@ -6,6 +6,22 @@
 
 ---
 
+## v12 (2026-09-02) — STEP-01 구현 중 발견한 스키마 누락 2건 수정
+
+`store.py`를 실제로 짜면서 `03-저장.md`의 DDL이 각 단계 문서의 Pydantic 스키마와
+어긋나는 지점 둘을 발견했다. 문서만 있고 코드가 없었을 땐 안 드러났다.
+
+- **`components`에 `priority` 컬럼 누락** — [1-analyze.md](stages/1-analyze.md)의
+  `Component` 스키마와 출력 SQL은 `priority`를 포함하는데 `03-저장.md`의 DDL 스케치에는
+  없었다. `search`가 상위 N개를 고르는 정렬 기준이라 없으면 안 된다
+- **`verdicts`에 `unsupported_claims_json` 컬럼 누락** — `Verdict` 스키마의
+  `unsupported_claims` 필드(judge가 "근거 없는 판단"이라 표시하는 정직한 출구)를 저장할
+  자리가 DDL에 없었다. `pros_json`·`cons_json`·`caveats_json`과 같은 방식으로 추가
+
+둘 다 `03-저장.md`에 반영했다. `store.py` 구현이 이 두 필드를 넣은 버전을 기준으로 한다.
+
+---
+
 ## v11 (2026-09-02) — `python-dotenv`로 boto3 크레덴셜 간극을 메움
 
 `.env`에 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`를 채우고 `doctor`를 돌렸는데도
