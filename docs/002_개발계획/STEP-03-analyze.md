@@ -18,7 +18,14 @@
 
 ## 막히면
 전부 `essential`로 나오면 프롬프트에 "더 단순한 대안이 있는지 먼저 검토하라"를 추가.
-`non_goals`를 프롬프트에 넣었는지 확인 — 걸러내기의 가장 강한 신호다.
+`refined_brief`에 범위 제외("이번엔 안 한다" 등)가 있는지 확인 — 걸러내기의 가장 강한
+신호다.
+
+**입력이 바뀜(2026-09-02)**: `interview`가 재설계되면서 `Interview.non_goals`·
+`must_haves`·`scale` 같은 슬롯 필드가 사라졌다. `analyze`는 이제 `refined_brief`
+프로즈 하나만 입력으로 받는다 — 판단 로직(범위 제외 → defer/unnecessary)은 그대로이고,
+신호가 별도 필드에서 문장으로 옮겨갔을 뿐이다. 자세한 배경은
+[001/CHANGELOG v13](../001_기술스택-조사-에이전트-설계/CHANGELOG.md)에 있다.
 
 실제로 `uv run scout run "AI 요약 기능이 있는 팀 채팅 앱을 만들고 싶어. 메시지 전문검색이나
 외부 공개는 이번엔 필요없어"`를 돌려 확인함: `components` 10행 생성, `kind` 5종

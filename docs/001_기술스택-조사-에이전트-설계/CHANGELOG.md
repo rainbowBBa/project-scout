@@ -6,6 +6,46 @@
 
 ---
 
+## v13 (2026-09-02) — interview: 고정 5문항 → LLM 주도 다중 턴, `Interview` 슬롯 필드 제거
+
+STEP-02 구현·검증 후, 사용자가 "진짜 대화하듯 인터뷰하고 싶다"고 요청했다. 기존 방식은
+코드가 고정된 질문 5개를 순서대로 묻고, LLM이 그 답을 `scale`·`budget_monthly_usd`·
+`team_size`·`team_languages`·`deadline_months`·`data_sensitivity`·`must_haves`·
+`non_goals` 8개 슬롯 필드로 나눠 담았다.
+
+두 가지를 바꿨다.
+
+- **대화형 다중 턴**: 질문 개수·내용을 코드가 아니라 LLM이 매 턴 판단한다. 정보가
+  충분하면 스스로 대화를 끝낸다. 원문에 이미 있는 정보는 다시 묻지 않는다 — 이전
+  방식에서는 "구현하지 않음"으로 명시적으로 남겨뒀던 한계다. 이 루프는 파이썬
+  for-loop가 아니라 `stages/interview.py` 안의 작은 LangGraph 서브그래프
+  (`ask_question → get_answer → (반복) → synthesize`, 순환은 조건 엣지)로 짰다 —
+  프로젝트 전체가 LangGraph `StateGraph`로 오케스트레이션되는 것과 같은 방식을 stage
+  내부 턴 루프에도 그대로 적용한 것.
+- **`Interview` 스키마 슬롯 8개 제거**: "예상 규모·인원·데이터 민감도 같은 정형화된
+  정보도 필요 없이 인터뷰 내용을 전달하면 되지 않을까"라는 질문에서 시작했다. 실제로
+  STEP-02/03 검증 실행에서 `refined_brief`가 이미 "사내 200명... 3인 TypeScript
+  팀... 메시지 전문검색과 외부 공개는 이번 범위에서 제외한다"처럼 슬롯 값을 프로즈
+  안에 전부 담고 있었다 — 슬롯은 `refined_brief`와 중복이었다. `0-interview.md`가
+  이미 선언해둔 원칙("조립을 한 번만 한다")과도 어긋나 있었다. 최종 `Interview`는
+  `raw_description` · `refined_brief` · `assumptions` 세 필드만 남는다. "꼭 필요한
+  정보는 받아야 한다"는 전제는 스키마가 아니라 **대화 단계의 질문 가이드**로 옮겨
+  갔다 — `ask_question`이 여전히 규모·예산·팀·데드라인·민감도·핵심 기능·범위 제외를
+  확인 대상으로 삼는다.
+
+부수 효과: `budget_monthly_usd` 필드가 없어지면서, 그 필드 때문에 만들었던
+`_recover_from_tool_call`(LLM이 JSON `null` 대신 문자열 `"null"`을 쓰는 버그를 보정하는
+코드)이 통째로 필요 없어졌다.
+
+연쇄 변경: `1-analyze.md`의 "입력" 절이 `non_goals`를 직접 참조하던 것에서
+`refined_brief` 전체를 참조하는 것으로 바뀌었다. `analyze`의 판단 로직(범위 제외 →
+defer/unnecessary) 자체는 그대로다 — 신호가 별도 필드에서 문장으로 옮겨갔을 뿐이다.
+
+`0-interview.md`·`1-analyze.md`를 이 버전 기준으로 갱신했다. `stages/interview.py`·
+`stages/analyze.py` 구현이 이 스키마를 따른다.
+
+---
+
 ## v12 (2026-09-02) — STEP-01 구현 중 발견한 스키마 누락 2건 수정
 
 `store.py`를 실제로 짜면서 `03-저장.md`의 DDL이 각 단계 문서의 Pydantic 스키마와

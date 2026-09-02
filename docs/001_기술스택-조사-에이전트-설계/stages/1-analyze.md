@@ -22,10 +22,13 @@
 
 ## 입력
 
-`runs` 테이블의 `interview_json` — 특히 **`refined_brief`**와 **`non_goals`**.
+`runs` 테이블의 `interview_json` — `Interview.refined_brief` 전체 (0-interview.md 참고,
+`Interview`는 `raw_description`·`refined_brief`·`assumptions` 세 필드뿐이다. 예산·팀·
+데드라인·데이터 민감도·핵심 기능·범위 제외가 전부 이 프로즈 안에 자연어로 담겨 있다).
 
-`non_goals`가 직접 쓰인다: 사용자가 "검색은 나중에"라고 말했으면 그게 그 요소를
-`defer`로 분류하는 근거가 된다. 사용자가 명시한 범위 밖은 조사하지 않는다.
+범위 제외는 별도 필드가 아니라 `refined_brief` 문장으로 흘러온다: 사용자가 "검색은
+나중에"라고 말했으면 그 문장이 `refined_brief`에 들어가 있고, 그게 그 요소를 `defer`로
+분류하는 근거가 된다. 사용자가 명시한 범위 밖은 조사하지 않는다.
 
 ---
 
@@ -106,7 +109,7 @@ LLM 1회, `.with_structured_output(Analysis, include_raw=True)`.
 
 프롬프트에 넣는 것:
 
-- `description` + `interview` 제약조건 전체
+- `interview.refined_brief` 전체(제약조건이 전부 자연어로 녹아있다) + `assumptions`
 - **도메인 힌트 문자열** — 웹/SaaS와 AI 앱에서 흔히 빠뜨리는 요소 목록
   (인증, 마이그레이션, 관측, 비용 모니터링, 레이트리밋, LLM 응답 캐싱 등).
   `domains/` 모듈을 잘라낸 대신 프롬프트 문자열로 넣는다
