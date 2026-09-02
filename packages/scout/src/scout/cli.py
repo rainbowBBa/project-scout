@@ -24,6 +24,14 @@ app = typer.Typer()
 # 파이프라인 6단계 전체 이름. 아직 구현된 노드만 IMPLEMENTED_STAGES에 있다 — STEP이 끝날 때마다 하나씩 늘어난다.
 STAGE_ORDER = ["interview", "analyze", "search", "verify", "evaluate", "report"]
 IMPLEMENTED_STAGES = ["interview", "analyze"]
+STAGE_LABELS = {
+    "interview": "인터뷰",
+    "analyze": "분석",
+    "search": "검색",
+    "verify": "검증",
+    "evaluate": "평가",
+    "report": "리포트",
+}
 
 
 class ShowStage(str, Enum):
@@ -43,12 +51,16 @@ class Stage(str, Enum):
     report = "report"
 
 
-@app.callback()
-def callback() -> None:
+@app.callback(invoke_without_command=True)
+def callback(ctx: typer.Context) -> None:
     """project-scout — 만들고 싶은 소프트웨어를 근거와 함께 답하는 CLI."""
     # boto3는 .env를 모른다 — os.environ에 직접 있어야 AWS_ACCESS_KEY_ID 등을 집는다.
     # pydantic-settings의 env_file 로딩은 Settings 필드에만 값을 채우고 os.environ은 건드리지 않는다.
     load_dotenv()
+    if ctx.invoked_subcommand is None:
+        # 서브커맨드 없이 `uv run scout`만 실행한 경우 — 기본 진입점. 설명은
+        # 대화형으로 받는다 (02-파이프라인.md "실행 흐름").
+        _run_pipeline(None, Stage.interview, None, None, None)
 
 
 @app.command()
@@ -135,7 +147,7 @@ async def _mcp_smoke() -> None:
 
 @app.command()
 def run(
-    description: str,
+    description: Annotated[str | None, typer.Argument()] = None,
     from_stage: Annotated[
         Stage, typer.Option("--from", help="이 단계부터 실행한다")
     ] = Stage.interview,
@@ -145,7 +157,19 @@ def run(
     max_components: Annotated[int | None, typer.Option("--max-components")] = None,
     max_candidates: Annotated[int | None, typer.Option("--max-candidates")] = None,
 ) -> None:
-    """설명 한 줄로 파이프라인을 실행한다. interview부터 시작해 되묻고 runs에 저장한다."""
+    """파이프라인을 실행한다. 설명을 인자로 안 주면 대화형으로 묻는다 (개발용 —
+    `--from`/`--stop-after`/`--max-components`/`--max-candidates`로 재현·재개한다).
+    """
+    _run_pipeline(description, from_stage, stop_after, max_components, max_candidates)
+
+
+def _run_pipeline(
+    description: str | None,
+    from_stage: Stage,
+    stop_after: Stage | None,
+    max_components: int | None,
+    max_candidates: int | None,
+) -> None:
     for stage in (from_stage, stop_after):
         if stage is not None and stage.value not in IMPLEMENTED_STAGES:
             typer.echo(
@@ -165,6 +189,9 @@ def run(
     if max_candidates is not None:
         settings.scout_max_candidates = max_candidates
 
+    if description is None:
+        description = typer.prompt("프로젝트 설명 입력")
+
     slug = make_slug(description, today=datetime.now(UTC).date().isoformat())
     llm = make_llm(settings)
 
@@ -178,26 +205,68 @@ def run(
         "max_candidates": settings.scout_max_candidates,
         "max_turns": settings.scout_interview_max_turns,
     }
+
+    typer.echo(f"\n[{STAGE_LABELS['interview']}] 단계를 시작합니다.")
+    stopped_early = False
     with SqliteSaver.from_conn_string(checkpoint_path) as checkpointer:
         graph = build_graph(llm, checkpointer)
-        result = graph.invoke(
-            initial_state, config={"configurable": {"thread_id": slug}}
-        )
+        for update in graph.stream(
+            initial_state,
+            config={"configurable": {"thread_id": slug}},
+            stream_mode="updates",
+        ):
+            node_name, node_output = next(iter(update.items()))
+            typer.echo(f"[{STAGE_LABELS[node_name]}] 단계를 종료합니다.")
+            _print_stage_summary(node_name, node_output)
+            if stop_after is not None and node_name == stop_after.value:
+                stopped_early = True
+                break
+            _maybe_print_next_stage_banner(node_name)
 
-    typer.echo(f"\n[OK] slug={slug}")
-    typer.echo(
-        json.dumps(result["interview"].model_dump(), ensure_ascii=False, indent=2)
-    )
-    if "components" in result:
+    _print_pipeline_footer(slug, stopped_early=stopped_early)
+
+
+def _print_stage_summary(node_name: str, node_output: dict) -> None:
+    if node_name == "interview":
+        interview = node_output["interview"]
+        typer.echo(f"  구체화된 설명: {interview.refined_brief}")
+        if interview.assumptions:
+            typer.echo("  가정:")
+            for a in interview.assumptions:
+                typer.echo(f"    - {a}")
+        else:
+            typer.echo("  가정: (없음 — 전부 응답함)")
+    elif node_name == "analyze":
+        components = node_output["components"]
         typer.echo(
-            "\n[components] (search로 통과된 요소 — 걸러진 것은 show analyze로 확인)"
+            f"  통과 {len(components)}개 (걸러진 것 포함 전체 목록은 "
+            "`scout show <slug> analyze`)"
         )
-        typer.echo(
-            json.dumps(
-                [c.model_dump() for c in result["components"]],
-                ensure_ascii=False,
-                indent=2,
+        for c in components:
+            typer.echo(
+                f"    [{c.necessity}] {c.name} ({c.kind}) — priority {c.priority}"
             )
+
+
+def _maybe_print_next_stage_banner(node_name: str) -> None:
+    idx = STAGE_ORDER.index(node_name)
+    if idx + 1 >= len(STAGE_ORDER):
+        return
+    next_stage = STAGE_ORDER[idx + 1]
+    if next_stage in IMPLEMENTED_STAGES:
+        typer.echo(f"\n[{STAGE_LABELS[next_stage]}] 단계를 시작합니다.")
+
+
+def _print_pipeline_footer(slug: str, *, stopped_early: bool) -> None:
+    typer.echo(f"\n[OK] slug={slug}")
+    if stopped_early:
+        typer.echo(
+            f"지정한 단계까지 실행을 마쳤습니다. `scout show {slug} <단계>`로 결과를 볼 수 있습니다."
+        )
+    else:
+        typer.echo(
+            f"다음 단계는 아직 구현되지 않았습니다. "
+            f"`scout show {slug} <단계>`로 지금까지 결과를 볼 수 있습니다."
         )
 
 
