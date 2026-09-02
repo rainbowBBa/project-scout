@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     scout_runs_dir: str = "runs"
     scout_max_components: int = 3
     scout_max_candidates: int = 3
+    scout_interview_max_turns: int = 5
     scout_llm_concurrency: int = 4
     scout_mcp_concurrency: int = 8
     scout_log_level: str = "info"

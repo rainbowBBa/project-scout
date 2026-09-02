@@ -176,6 +176,7 @@ def run(
         "description": description,
         "max_components": settings.scout_max_components,
         "max_candidates": settings.scout_max_candidates,
+        "max_turns": settings.scout_interview_max_turns,
     }
     with SqliteSaver.from_conn_string(checkpoint_path) as checkpointer:
         graph = build_graph(llm, checkpointer)

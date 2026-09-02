@@ -1,112 +1,188 @@
-"""interview 단계 — 되묻기로 막연한 요청을 구체화해 Interview를 만들고 runs에 저장한다.
+"""interview 단계 — 대화형으로 되물어 막연한 요청을 구체화해 Interview를 만들고
+runs에 저장한다.
 
-LLM 1회 (000_기술스택-조사-에이전트-설계/stages/0-interview.md). 5개 질문은 코드가 CLI로
-직접 묻는다 — LLM은 raw_description + 답변을 받아 refined_brief와 나머지 필드를 합성하는
-역할 하나만 한다.
+질문 개수·내용은 코드가 정하지 않는다. LLM이 매 턴 "질문 하나 더" 또는 "충분함"을
+판단한다 (000_기술스택-조사-에이전트-설계/stages/0-interview.md). 이 대화 루프는
+파이썬 for-loop가 아니라 작은 LangGraph 서브그래프로 짠다 — 순환은 조건 엣지로
+표현한다:
+
+    START → ask_question ─(질문 있음)→ get_answer ─(계속)→ ask_question (반복)
+                │                                     │
+          (done/한도 도달)                      (비대화형 입력)
+                └──────────────→ synthesize ←─────────┘
+                                      │
+                                     END
+
+외부 파이프라인(scout/graph.py)에서 보이는 "interview" 노드는 하나 그대로다 —
+그 노드가 내부적으로 이 서브그래프를 돈다.
 """
 
 from __future__ import annotations
 
+import operator
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated, TypedDict
 
 import typer
-from langchain_core.messages import HumanMessage
-from pydantic import ValidationError
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langgraph.graph import END, START, StateGraph
 
 from scout import store
-from scout.prompts import INTERVIEW_PROMPT, INTERVIEW_RETRY_HINT
-from scout.schemas import Interview
+from scout.prompts import (
+    INTERVIEW_SYNTHESIS_PROMPT,
+    INTERVIEW_SYNTHESIS_RETRY_HINT,
+    INTERVIEW_TURN_PROMPT,
+    INTERVIEW_TURN_RETRY_HINT,
+)
+from scout.schemas import Interview, InterviewTurn
 
 if TYPE_CHECKING:
     from langchain_aws import ChatBedrockConverse
 
     from scout.state import ScoutState
 
-# (state 키, 질문, 미응답 시 기본값) — 순서가 되묻는 순서다. 001/stages/0-interview.md "질문 5개"
-_QUESTIONS: list[tuple[str, str, str]] = [
-    ("scale", "예상 사용자 규모는?", "미지정 (중소 규모 가정)"),
-    ("budget", "월 인프라 예산은 얼마인가요? (숫자만, 모르면 Enter)", "미지정"),
-    ("team", "팀 인원과 숙련 언어는?", "3인, 숙련 언어 미지정"),
-    ("deadline", "데드라인은 몇 개월 후인가요?", "3개월"),
-    (
-        "data_sensitivity",
-        "데이터 민감도는? (public / internal / regulated)",
-        "internal",
-    ),
-]
+Ask = Callable[[str], str]
 
-Ask = Callable[[str, str], str]
+_DEFAULT_MAX_TURNS = 5
 
 
 class NonInteractive(Exception):
     """대화형 입력이 불가능한 환경(파이프·CI)에서 stdin이 즉시 EOF일 때."""
 
 
-def _default_ask(question: str, default: str) -> str:
+def _default_ask(question: str) -> str:
     try:
-        return typer.prompt(
-            f"? {question} [기본값: {default}]", default="", show_default=False
-        )
+        return typer.prompt(f"? {question}", default="", show_default=False)
     except (EOFError, typer.Abort):
         raise NonInteractive from None
 
 
-def _collect_answers(ask: Ask) -> tuple[dict[str, str], list[str]]:
-    """5개 질문을 순서대로 묻는다. 빈 입력·비대화형 모두 기본값 + assumptions 기록으로 처리한다."""
-    answers: dict[str, str] = {}
-    assumptions: list[str] = []
-    for key, question, default in _QUESTIONS:
-        try:
-            response = ask(question, default).strip()
-        except NonInteractive:
-            for k, _q, d in _QUESTIONS:
-                answers.setdefault(k, d)
-            assumptions.append("비대화형 실행 — 전부 기본값 사용")
-            break
-        if response:
-            answers[key] = response
-        else:
-            answers[key] = default
-            assumptions.append(f"'{question}' 미응답 — 기본값 '{default}' 사용")
-    return answers, assumptions
+class _InterviewState(TypedDict, total=False):
+    history: Annotated[list[BaseMessage], operator.add]
+    gap_notes: Annotated[list[str], operator.add]
+    turn_count: int
+    max_turns: int
+    pending_question: str | None
+    stop: bool
+    interview: Interview | None
 
 
-def _build_prompt_input(
-    raw_description: str, answers: dict[str, str], default_notes: list[str]
-) -> dict[str, str]:
-    qa_lines = "\n".join(f"- {q}: {answers[key]}" for key, q, _d in _QUESTIONS)
-    defaults_block = (
-        "\n".join(f"- {n}" for n in default_notes)
-        if default_notes
-        else "(없음 — 전부 응답함)"
+def _decide_next_turn(
+    llm: ChatBedrockConverse, history: list[BaseMessage]
+) -> InterviewTurn | None:
+    """다음 질문 또는 종료 여부를 판단한다. 재시도까지 실패하면 None — 호출부가 종료로 처리한다."""
+    structured_llm = llm.with_structured_output(InterviewTurn, include_raw=True)
+    chain = INTERVIEW_TURN_PROMPT | structured_llm
+
+    result = chain.invoke({"history": history})
+    turn = result["parsed"]
+    if turn is None:
+        retry_messages = [
+            *INTERVIEW_TURN_PROMPT.invoke({"history": history}).to_messages(),
+            HumanMessage(INTERVIEW_TURN_RETRY_HINT),
+        ]
+        result = structured_llm.invoke(retry_messages)
+        turn = result["parsed"]
+    return turn
+
+
+def _synthesize_interview(
+    llm: ChatBedrockConverse, history: list[BaseMessage], gap_notes: list[str]
+) -> Interview:
+    gap_block = (
+        "\n".join(f"- {n}" for n in gap_notes) if gap_notes else "(없음 — 전부 응답함)"
     )
+    prompt_input = {"history": history, "gap_notes": gap_block}
+
+    structured_llm = llm.with_structured_output(Interview, include_raw=True)
+    chain = INTERVIEW_SYNTHESIS_PROMPT | structured_llm
+
+    result = chain.invoke(prompt_input)
+    interview = result["parsed"]
+    if interview is None:
+        retry_messages = [
+            *INTERVIEW_SYNTHESIS_PROMPT.invoke(prompt_input).to_messages(),
+            HumanMessage(INTERVIEW_SYNTHESIS_RETRY_HINT),
+        ]
+        result = structured_llm.invoke(retry_messages)
+        interview = result["parsed"]
+    if interview is None:
+        raise RuntimeError(f"Interview 구조화 출력 파싱 실패: {result['raw']}")
+
+    # 코드 쪽 안전망 — judge가 gap_notes를 놓쳐도 미응답 사실 자체는 항상 남는다.
+    merged_assumptions = list(dict.fromkeys([*interview.assumptions, *gap_notes]))
+    return interview.model_copy(update={"assumptions": merged_assumptions})
+
+
+def _ask_question_node(state: _InterviewState, *, llm: ChatBedrockConverse) -> dict:
+    if state["turn_count"] >= state["max_turns"]:
+        return {
+            "pending_question": None,
+            "gap_notes": [
+                f"질문 {state['max_turns']}회 한도 도달 — 남은 판단은 추정으로 채움"
+            ],
+        }
+
+    turn = _decide_next_turn(llm, state["history"])
+    if turn is None or turn.done or not turn.question:
+        return {"pending_question": None}
     return {
-        "raw_description": raw_description,
-        "qa_lines": qa_lines,
-        "defaults_block": defaults_block,
+        "history": [AIMessage(turn.question)],
+        "turn_count": state["turn_count"] + 1,
+        "pending_question": turn.question,
     }
 
 
-def _recover_from_tool_call(raw: object) -> Interview | None:
-    """budget_monthly_usd에 JSON null 대신 문자열 "null"을 쓰는 관찰된 버그를 보정해 재시도한다."""
-    tool_calls = getattr(raw, "tool_calls", None)
-    if not tool_calls:
-        return None
-    args = dict(tool_calls[0].get("args", {}))
-    if isinstance(args.get("budget_monthly_usd"), str) and args[
-        "budget_monthly_usd"
-    ].strip().lower() in (
-        "null",
-        "none",
-        "",
-    ):
-        args["budget_monthly_usd"] = None
+def _route_after_ask(state: _InterviewState) -> str:
+    return "get_answer" if state.get("pending_question") else "synthesize"
+
+
+def _get_answer_node(state: _InterviewState, *, ask: Ask) -> dict:
+    question = state["pending_question"]
+    assert question is not None
     try:
-        return Interview.model_validate(args)
-    except ValidationError:
-        return None
+        answer = ask(question).strip()
+    except NonInteractive:
+        return {
+            "gap_notes": ["비대화형 실행 — 남은 질문 생략, 알고 있는 정보로 판단"],
+            "stop": True,
+        }
+    if answer:
+        return {"history": [HumanMessage(answer)]}
+    return {
+        "history": [HumanMessage("(답변 없음 — 알아서 합리적으로 가정해라)")],
+        "gap_notes": [f"'{question}' 미응답"],
+    }
+
+
+def _route_after_answer(state: _InterviewState) -> str:
+    return "synthesize" if state.get("stop") else "ask_question"
+
+
+def _synthesize_node(state: _InterviewState, *, llm: ChatBedrockConverse) -> dict:
+    interview = _synthesize_interview(llm, state["history"], state["gap_notes"])
+    return {"interview": interview}
+
+
+def _build_interview_graph(llm: ChatBedrockConverse, ask: Ask):
+    graph = StateGraph(_InterviewState)
+    graph.add_node("ask_question", lambda state: _ask_question_node(state, llm=llm))
+    graph.add_node("get_answer", lambda state: _get_answer_node(state, ask=ask))
+    graph.add_node("synthesize", lambda state: _synthesize_node(state, llm=llm))
+    graph.add_edge(START, "ask_question")
+    graph.add_conditional_edges(
+        "ask_question",
+        _route_after_ask,
+        {"get_answer": "get_answer", "synthesize": "synthesize"},
+    )
+    graph.add_conditional_edges(
+        "get_answer",
+        _route_after_answer,
+        {"ask_question": "ask_question", "synthesize": "synthesize"},
+    )
+    graph.add_edge("synthesize", END)
+    return graph.compile()  # 체크포인터 불필요 — 한 번의 동기 호출 안에서 끝난다
 
 
 def run_interview(
@@ -114,35 +190,26 @@ def run_interview(
     raw_description: str,
     *,
     ask: Ask = _default_ask,
+    max_turns: int = _DEFAULT_MAX_TURNS,
 ) -> Interview:
-    answers, default_notes = _collect_answers(ask)
-    prompt_input = _build_prompt_input(raw_description, answers, default_notes)
-
-    # prompt | llm — 스키마는 프롬프트 텍스트가 아니라 API에 tool로 전달된다
-    structured_llm = llm.with_structured_output(Interview, include_raw=True)
-    chain = INTERVIEW_PROMPT | structured_llm
-
-    result = chain.invoke(prompt_input)
-    interview = result["parsed"] or _recover_from_tool_call(result["raw"])
-    if interview is None:
-        retry_messages = [
-            *INTERVIEW_PROMPT.invoke(prompt_input).to_messages(),
-            HumanMessage(INTERVIEW_RETRY_HINT),
-        ]
-        result = structured_llm.invoke(retry_messages)
-        interview = result["parsed"] or _recover_from_tool_call(result["raw"])
-    if interview is None:
-        raise RuntimeError(f"Interview 구조화 출력 파싱 실패: {result['raw']}")
-
-    # 코드 쪽 안전망 — judge가 assumptions를 놓쳐도 기본값 사용 사실 자체는 항상 남는다.
-    merged_assumptions = list(dict.fromkeys([*interview.assumptions, *default_notes]))
-    return interview.model_copy(
-        update={"raw_description": raw_description, "assumptions": merged_assumptions}
+    result = _build_interview_graph(llm, ask).invoke(
+        {
+            "history": [HumanMessage(raw_description)],
+            "gap_notes": [],
+            "turn_count": 0,
+            "max_turns": max_turns,
+            "pending_question": None,
+            "stop": False,
+        }
     )
+    interview = result["interview"]
+    return interview.model_copy(update={"raw_description": raw_description})
 
 
 def interview_node(state: ScoutState, *, llm: ChatBedrockConverse) -> dict:
-    interview = run_interview(llm, state["description"])
+    interview = run_interview(
+        llm, state["description"], max_turns=state.get("max_turns", _DEFAULT_MAX_TURNS)
+    )
     store.upsert_run(
         state["slug"],
         state["description"],

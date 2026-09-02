@@ -28,18 +28,7 @@ _PASSING_NECESSITY = {"essential", "valuable"}
 def _build_prompt_input(interview: Interview) -> dict[str, str]:
     return {
         "refined_brief": interview.refined_brief,
-        "scale": interview.scale,
-        "budget": (
-            f"${interview.budget_monthly_usd}"
-            if interview.budget_monthly_usd is not None
-            else "미지정"
-        ),
-        "team_size": str(interview.team_size),
-        "team_languages": ", ".join(interview.team_languages) or "미지정",
-        "deadline_months": str(interview.deadline_months),
-        "data_sensitivity": interview.data_sensitivity,
-        "must_haves": "\n".join(f"- {m}" for m in interview.must_haves) or "(없음)",
-        "non_goals": "\n".join(f"- {n}" for n in interview.non_goals) or "(없음)",
+        "assumptions": "\n".join(f"- {a}" for a in interview.assumptions) or "(없음)",
     }
 
 

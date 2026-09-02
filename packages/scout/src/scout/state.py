@@ -9,6 +9,7 @@ class ScoutState(TypedDict, total=False):
     description: str
     max_components: int
     max_candidates: int
+    max_turns: int
     interview: Interview
     components: list[Component]
     # candidates/verdicts/element_picks는 요소별·후보별 Send fan-out으로 채워진다 —

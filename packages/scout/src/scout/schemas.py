@@ -6,15 +6,14 @@ from pydantic import BaseModel, Field
 class Interview(BaseModel):
     raw_description: str
     refined_brief: str
-    scale: str
-    budget_monthly_usd: int | None
-    team_size: int
-    team_languages: list[str]
-    deadline_months: float
-    data_sensitivity: Literal["public", "internal", "regulated"]
-    must_haves: list[str]
-    non_goals: list[str]
     assumptions: list[str]
+
+
+class InterviewTurn(BaseModel):
+    """대화 루프 전용 판단 — 저장되지 않는다 (0-interview.md)."""
+
+    done: bool
+    question: str | None = None
 
 
 class Component(BaseModel):

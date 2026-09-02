@@ -5,51 +5,87 @@
 형태로 파이프 연결한다 (CLAUDE.md "LLM 구조화 출력" 패턴).
 """
 
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 # ── interview ────────────────────────────────────────────────────────────
+# 대화 자체는 stages/interview.py의 LangGraph 서브그래프(ask_question → get_answer →
+# 반복 → synthesize)가 돈다. 여기 프롬프트는 그 두 LLM 호출 지점(질문 생성 / 최종 합성)
+# 전용이다 (0-interview.md).
 
-INTERVIEW_SYSTEM_PROMPT = """당신은 소프트웨어 프로젝트의 요구사항을 구체화하는 인터뷰어다.
-사용자의 한 줄 설명과 5개 질문에 대한 답변을 받아 Interview 스키마를 채운다.
+INTERVIEW_TURN_SYSTEM_PROMPT = """당신은 소프트웨어 프로젝트의 요구사항을 캐내는
+인터뷰어다. 지금까지의 대화(사용자의 원래 설명 + 오간 질문·답변)를 보고, 다음 질문을
+만들지 여기서 끝낼지 판단한다.
+
+확인해야 할 것 — 질문표가 아니라 가이드다. 이미 답을 알고 있으면 넘어간다:
+- 예상 사용자 규모 (200명과 20만명은 완전히 다른 스택이다)
+- 월 인프라 예산 (관리형이냐 자체 운영이냐를 가른다)
+- 팀 인원 / 숙련 언어 (배울 시간이 있는지가 스택 선택을 지배한다)
+- 데드라인 (검증된 것 vs 최신 것의 균형점을 정한다)
+- 데이터 민감도 · 규제
+- 핵심 기능(must-have) / 이번엔 하지 않을 범위(non-goal) — analyze가 요소를 거를 때
+  가장 강한 신호가 된다
 
 규칙:
-1. refined_brief는 3~5문장의 새로 쓴 글이다. raw_description이나 답변을 그대로 나열하거나
-   복사하면 안 된다. 예를 들어 입력이 "AI 요약 기능이 있는 팀 채팅 앱을 만들고 싶어"라면
-   그 문장을 반복하지 말고, "사내 200명이 쓰는 팀 채팅 앱. 실시간 메시지 전달과 AI 요약이
-   핵심 기능. 3인 TypeScript 팀이 3개월 내 출시..."처럼 답변 내용을 문장에 녹여 새로 써라.
-2. must_haves와 non_goals는 최소 1개 이상씩 채운다. 사용자가 명시하지 않았다면 설명과
-   답변에서 합리적으로 추론해 채운다 — 절대 비워두지 않는다.
-3. assumptions에는 기본값을 쓴 항목을 모두 문장으로 적는다. 아래 "기본값 사용 항목" 목록에
-   있는 각 줄을 빠짐없이 반영한다.
-4. budget_monthly_usd는 숫자를 찾을 수 없으면 반드시 null이다 — **0을 쓰지 않는다.**
-   0은 "예산이 0원"이라는 다른 뜻이 되어버린다. "미지정"·"모름"·"미응답"은 전부 null이다.
-   team_size는 정수로, deadline_months는 숫자(개월)로 변환한다. data_sensitivity는
-   public/internal/regulated 중 하나로 정규화한다.
+1. 한 번에 질문 하나만 만든다.
+2. 원래 설명이나 이전 답변에 이미 있는 정보는 다시 묻지 않는다 — 예를 들어
+   "3인 팀, TypeScript 숙련, 월 $200"처럼 이미 나와 있으면 팀·예산은 묻지 않는다.
+3. 판단하기 충분하면 즉시 done=true로 끝낸다. 질문을 위한 질문을 만들지 않는다 —
+   위 목록을 기계적으로 다 채우려 하지 마라, 이미 판단 가능하면 멈춰라.
+4. done=false면 question은 필수다. done=true면 question은 비워도 된다.
 """
 
-INTERVIEW_PROMPT = ChatPromptTemplate.from_messages(
+INTERVIEW_TURN_PROMPT = ChatPromptTemplate.from_messages(
     [
-        ("system", INTERVIEW_SYSTEM_PROMPT),
+        ("system", INTERVIEW_TURN_SYSTEM_PROMPT),
+        MessagesPlaceholder("history"),
+    ]
+)
+
+INTERVIEW_TURN_RETRY_HINT = (
+    "형식을 정확히 지켜 스키마에 맞는 JSON만 다시 출력해라. "
+    "done=false면 question이 반드시 있어야 한다."
+)
+
+INTERVIEW_SYNTHESIS_SYSTEM_PROMPT = """당신은 방금 끝난 인터뷰 대화를 정리하는
+역할이다. 대화 전체를 근거로 Interview 스키마를 채운다.
+
+규칙:
+1. refined_brief는 3문장 이상의 새로 쓴 글이다. 원래 설명이나 대화를 그대로 나열하거나
+   복사하면 안 된다 — 예를 들어 "AI 요약 기능이 있는 팀 채팅 앱을 만들고 싶어"를
+   반복하지 말고, "사내 200명이 쓰는 팀 채팅 앱. 실시간 메시지 전달과 AI 요약이 핵심
+   기능. 3인 TypeScript 팀이 3개월 내 출시..."처럼 대화 내용을 문장에 녹여 새로 써라.
+2. refined_brief는 정보 밀도가 높아야 한다 — 대화에서 사용자 규모·예산·팀·데드라인·
+   데이터 민감도·핵심 기능·범위 제외 중 하나라도 나왔다면 전부 문장으로 담아라.
+   대화에 나온 정보를 빠뜨리는 게 가장 흔한 실수다. refined_brief 하나가 뒤 단계
+   전체(analyze·verify·evaluate)의 유일한 입력이 된다.
+3. assumptions에는 "미응답·추정 항목" 목록에 있는 각 줄을 빠짐없이 문장으로 반영한다.
+   대화에서 실제로 답을 얻은 항목은 assumptions에 넣지 않는다.
+"""
+
+INTERVIEW_SYNTHESIS_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        ("system", INTERVIEW_SYNTHESIS_SYSTEM_PROMPT),
+        MessagesPlaceholder("history"),
         (
             "human",
             (
-                "raw_description: {raw_description}\n\n"
-                "질문과 답변:\n{qa_lines}\n\n"
-                "기본값 사용 항목 (assumptions에 반영):\n{defaults_block}\n"
+                "위 대화를 바탕으로 Interview를 채워라.\n\n"
+                "미응답·추정 항목 (assumptions에 반영):\n{gap_notes}\n"
             ),
         ),
     ]
 )
 
-INTERVIEW_RETRY_HINT = (
-    "형식을 정확히 지켜 스키마에 맞는 JSON만 다시 출력해라. "
-    'budget_monthly_usd를 모르면 JSON null을 써라 — 절대 문자열 "null"을 쓰지 마라.'
+INTERVIEW_SYNTHESIS_RETRY_HINT = (
+    "형식을 정확히 지켜 스키마에 맞는 JSON만 다시 출력해라."
 )
 
 # ── analyze ──────────────────────────────────────────────────────────────
 
 ANALYZE_SYSTEM_PROMPT = """당신은 소프트웨어 프로젝트에 필요한 요소를 도출하고, 각 요소가
-정말 필요한지 판단하는 아키텍트다. interview에서 구체화된 명세를 받아 Analysis 스키마를 채운다.
+정말 필요한지 판단하는 아키텍트다. interview에서 나온 refined_brief(대화 전체를 반영한
+자유 서술 — 예산·팀·데드라인·민감도·핵심 기능·범위 제외가 전부 자연어로 담겨 있다)를
+받아 Analysis 스키마를 채운다.
 
 규칙:
 1. 요소는 기능뿐 아니라 데이터 저장·인프라·외부 연동·배포와 운영까지 폭넓게 도출한다.
@@ -67,10 +103,10 @@ ANALYZE_SYSTEM_PROMPT = """당신은 소프트웨어 프로젝트에 필요한 �
    - unnecessary: 이 프로젝트엔 필요 없다
      (예: "관리형 서비스로 충분. 3인 팀이 3개월에 직접 운영할 여력이 없다")
    전부 essential로만 나오면 잘못된 것이다 — 더 단순한 대안이 있는지 먼저 검토해라.
-4. necessity_reason에는 interview의 제약조건 숫자(사용자 규모·팀 인원·예산·데드라인)를
-   반드시 인용해라. 숫자 없는 이유는 근거가 없는 것이다.
-5. non_goals에 명시된 범위 밖은 defer 또는 unnecessary의 가장 강한 신호다 — 사용자가
-   "검색은 나중에"라고 했으면 그 요소는 defer다.
+4. necessity_reason에는 refined_brief의 제약조건 숫자(사용자 규모·팀 인원·예산·
+   데드라인)를 반드시 인용해라. 숫자 없는 이유는 근거가 없는 것이다.
+5. refined_brief 안에 "이번엔 안 한다"·"범위 밖"으로 명시된 내용이 있으면 그 요소는
+   defer 또는 unnecessary의 가장 강한 신호다.
 6. priority는 1이 가장 중요하다. 이 프로젝트의 심장이 무엇인지 판단해서 매겨라.
 7. 요소는 6~10개가 정상이다. 20개는 너무 잘게 쪼갠 것이고, 3개는 너무 뭉갠 것이다.
 """
@@ -81,15 +117,9 @@ ANALYZE_PROMPT = ChatPromptTemplate.from_messages(
         (
             "human",
             (
-                "refined_brief: {refined_brief}\n\n"
-                "제약조건:\n"
-                "- 예상 사용자 규모: {scale}\n"
-                "- 월 예산: {budget}\n"
-                "- 팀: {team_size}인, 숙련 언어 {team_languages}\n"
-                "- 데드라인: {deadline_months}개월\n"
-                "- 데이터 민감도: {data_sensitivity}\n\n"
-                "must_haves:\n{must_haves}\n\n"
-                "non_goals (범위 밖 — defer/unnecessary의 신호):\n{non_goals}\n"
+                "refined_brief:\n{refined_brief}\n\n"
+                "일부 항목은 인터뷰에서 답을 얻지 못해 아래 가정을 썼다 (참고용):\n"
+                "{assumptions}\n"
             ),
         ),
     ]
