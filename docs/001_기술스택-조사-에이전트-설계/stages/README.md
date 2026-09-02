@@ -38,7 +38,8 @@ analyze ─ 상위 3개 요소 ─▶ search ─── 후보 8~10 ──▶ ver
 
 1. `interview`의 **`refined_brief`**는 `analyze` · `verify` · `evaluate` 프롬프트에
    그대로 들어간다 — 제약조건을 단계마다 재조립하지 않는다
-2. `interview`의 **`non_goals`**는 `analyze`의 `defer` 판단에 직접 쓰인다
+2. `interview`의 **`refined_brief`** 안에 범위 제외로 명시된 내용은 `analyze`의
+   `defer` 판단에 직접 쓰인다
 3. `analyze`가 걸러낸 요소는 `search`에 아예 들어가지 않는다 — 후보 수·토큰·시간이 함께 줄어든다
 4. `search`의 **dossier**는 `verify`의 유일한 판단 재료이면서, `evaluate`의 계산 입력이다.
    같은 사실이 두 경로로 쓰이는 게 **이중 안전망**의 근거다
