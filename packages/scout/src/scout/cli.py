@@ -30,27 +30,26 @@ async def _doctor() -> None:
     try:
         settings = Settings()
     except ValidationError as e:
-        typer.echo(f"[FAIL] Settings 로딩 실패 — 필수 변수(AWS_REGION 등)를 확인하세요:\n{e}")
+        typer.echo(f"[FAIL] Settings 로딩 실패 — 필수 변수(AWS_DEFAULT_REGION 등)를 확인하세요:\n{e}")
         raise typer.Exit(code=1) from None
 
-    typer.echo(f"[OK] AWS_REGION={settings.aws_region}")
+    typer.echo(f"[OK] AWS_DEFAULT_REGION={settings.aws_region}")
 
-    has_key = bool(os.environ.get("AWS_BEARER_TOKEN_BEDROCK"))
-    typer.echo(f"Bedrock API key: {'설정됨' if has_key else '미설정'} (값은 출력하지 않음)")
+    has_key = bool(os.environ.get("AWS_ACCESS_KEY_ID")) and bool(
+        os.environ.get("AWS_SECRET_ACCESS_KEY")
+    )
+    typer.echo(f"AWS Access Key: {'설정됨' if has_key else '미설정'} (값은 출력하지 않음)")
     typer.echo(f"boto3: {boto3.__version__}")
     typer.echo(f"langchain-aws: {langchain_aws_version}")
 
-    session_kwargs: dict[str, str] = {"region_name": settings.aws_region}
-    if settings.aws_profile:
-        session_kwargs["profile_name"] = settings.aws_profile
-    session = boto3.Session(**session_kwargs)
+    session = boto3.Session(region_name=settings.aws_region)
 
     try:
         identity = session.client("sts").get_caller_identity()
         typer.echo(f"[OK] sts get-caller-identity: {identity['Arn']}")
     except Exception as e:  # noqa: BLE001 — doctor는 원인 불문 다음 확인으로 넘어가야 한다
         typer.echo(f"[SKIP] AWS 인증 확인 실패 — {e}")
-        typer.echo("      .env 의 AWS_PROFILE 또는 AWS_BEARER_TOKEN_BEDROCK 을 채운 뒤 다시 실행하세요.")
+        typer.echo("      .env 의 AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY 를 채운 뒤 다시 실행하세요.")
         await _mcp_smoke()
         return
 

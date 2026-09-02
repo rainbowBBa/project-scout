@@ -17,11 +17,11 @@
 
 ## 완료 기준
 - [x] `uv sync` 성공, `uv sync --package scout-net-mcp` 가 langchain 없이 성공
-- [x] **`AWS_REGION` 없이 실행하면 시작 시 실패한다** (`BaseSettings` 필수 검증)
+- [x] **`AWS_DEFAULT_REGION` 없이 실행하면 시작 시 실패한다** (`BaseSettings` 필수 검증)
 - [x] `SCOUT_MAX_COMPONENTS=abc` 로 두면 타입 오류로 잡힌다
 - [x] `doctor` 가 인증 방식을 찍는다 — `sts get-caller-identity` · API key **존재 여부만** · boto3/langchain-aws 버전
 - [ ] `doctor` 가 `ListFoundationModels` 로 모델 ID 형태를 확정한다 — **AWS 자격 미설정이라 미확인.**
-      `.env`에 `AWS_PROFILE` 또는 `AWS_BEARER_TOKEN_BEDROCK`을 채운 뒤 `uv run scout doctor`로 확인
+      `.env`에 `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`를 채운 뒤 `uv run scout doctor`로 확인
 - [ ] Sonnet 1회 호출 + **4병렬 호출** 성공 (동시 쿼터 확인) — 위와 동일한 이유로 미확인
 - [x] MCP 스모크: `npm_package("socket.io")` 응답, allowlist 밖 도메인 거부
       (거부는 `tests/test_egress.py`로 검증 — allowlist 체크가 npm_package 호스트 하나뿐이라

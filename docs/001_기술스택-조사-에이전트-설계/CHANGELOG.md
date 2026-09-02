@@ -6,6 +6,27 @@
 
 ---
 
+## v10 (2026-09-02) — Bedrock 인증을 Access Key 방식으로 확정
+
+[07-검증](07-검증.md) M0 7번이 미결이었던 질문("사내 계정이 SigV4인지 Bedrock API key인지")이
+**Access Key 방식**(`AWS_ACCESS_KEY_ID` · `AWS_SECRET_ACCESS_KEY` · `AWS_DEFAULT_REGION`)으로
+확정됐다. SigV4 프로필 · Bedrock API key(`AWS_BEARER_TOKEN_BEDROCK`) 경로는 걷어냈다 —
+지금 안 쓰는 코드를 남겨둘 이유가 없다.
+
+- `AWS_REGION` → `AWS_DEFAULT_REGION`. `Settings.aws_region`은
+  `Field(validation_alias="AWS_DEFAULT_REGION")`으로 매핑 (규칙 8은 그대로 — 표준 이름이라
+  boto3 기본 체인이 그대로 읽는다)
+- `AWS_PROFILE` · `AWS_BEARER_TOKEN_BEDROCK` 필드·환경변수 제거. `aws_profile`이 없어지며
+  `llm.py`의 `credentials_profile_name` 전달도 같이 사라졌다 — boto3가 `AWS_ACCESS_KEY_ID` /
+  `AWS_SECRET_ACCESS_KEY`를 환경에서 그대로 집는다 (규칙 9는 그대로 — 크레덴셜은 여전히
+  `Settings`에 담지 않는다)
+- `doctor`의 존재 여부 체크 대상이 `AWS_BEARER_TOKEN_BEDROCK` 하나에서
+  `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` 둘로 바뀜 (값은 여전히 안 찍는다)
+
+`08-설정.md` · `07-검증.md` · `002/STEP-00-환경.md`의 변수명을 전부 갱신했다.
+
+---
+
 ## v9 (2026-09-02) — `necessity` 검증 테스트 추가 (테스트 4종)
 
 SERVICE.md를 쓰면서 **증거의 비대칭**이 드러났다. 이 도구의 차별점은 둘인데,

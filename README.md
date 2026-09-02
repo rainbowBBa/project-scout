@@ -8,7 +8,7 @@
 ## 설치
 
 ```bash
-cp .env.example .env   # 값을 채운다 (AWS_REGION 필수)
+cp .env.example .env   # 값을 채운다 (AWS_DEFAULT_REGION · AWS_ACCESS_KEY_ID · AWS_SECRET_ACCESS_KEY 필수)
 uv sync
 ```
 
