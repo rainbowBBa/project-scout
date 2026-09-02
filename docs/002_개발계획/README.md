@@ -50,7 +50,7 @@ STEP 0 환경 → 1 저장 → 2 interview → 3 analyze → 4 MCP서버 → 5 s
 
 ```
 Day 1
-[ ] STEP 00  환경        uv sync · .env/Settings · doctor · MCP 스모크
+[x] STEP 00  환경        uv sync · .env/Settings · doctor · MCP 스모크
 [ ] STEP 01  저장        scout.db 8개 테이블 생성
 [ ] STEP 02  interview   scout run 이 되묻고 runs 행 생성
 [ ] STEP 03  analyze     components 6~10행 + necessity 분류

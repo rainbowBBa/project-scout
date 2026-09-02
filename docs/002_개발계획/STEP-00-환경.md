@@ -16,15 +16,18 @@
 - `scout_net_mcp/server.py` — FastMCP + `npm_package` 1개 (스모크용)
 
 ## 완료 기준
-- [ ] `uv sync` 성공, `uv sync --package scout-net-mcp` 가 langchain 없이 성공
-- [ ] **`AWS_REGION` 없이 실행하면 시작 시 실패한다** (`BaseSettings` 필수 검증)
-- [ ] `SCOUT_MAX_COMPONENTS=abc` 로 두면 타입 오류로 잡힌다
-- [ ] `doctor` 가 인증 방식을 찍는다 — `sts get-caller-identity` · API key **존재 여부만** · boto3/langchain-aws 버전
-- [ ] `doctor` 가 `ListFoundationModels` 로 모델 ID 형태를 확정한다
-- [ ] Sonnet 1회 호출 + **4병렬 호출** 성공 (동시 쿼터 확인)
-- [ ] MCP 스모크: `npm_package("socket.io")` 응답, allowlist 밖 도메인 거부
-- [ ] `.gitignore` 에 `.env` 가 있고 `git status` 에 `.env` 가 안 뜬다
-- [ ] `uv run ruff check` 통과, `uv run ty check` 결과 확인 (오탐 많으면 끈다)
+- [x] `uv sync` 성공, `uv sync --package scout-net-mcp` 가 langchain 없이 성공
+- [x] **`AWS_REGION` 없이 실행하면 시작 시 실패한다** (`BaseSettings` 필수 검증)
+- [x] `SCOUT_MAX_COMPONENTS=abc` 로 두면 타입 오류로 잡힌다
+- [x] `doctor` 가 인증 방식을 찍는다 — `sts get-caller-identity` · API key **존재 여부만** · boto3/langchain-aws 버전
+- [ ] `doctor` 가 `ListFoundationModels` 로 모델 ID 형태를 확정한다 — **AWS 자격 미설정이라 미확인.**
+      `.env`에 `AWS_PROFILE` 또는 `AWS_BEARER_TOKEN_BEDROCK`을 채운 뒤 `uv run scout doctor`로 확인
+- [ ] Sonnet 1회 호출 + **4병렬 호출** 성공 (동시 쿼터 확인) — 위와 동일한 이유로 미확인
+- [x] MCP 스모크: `npm_package("socket.io")` 응답, allowlist 밖 도메인 거부
+      (거부는 `tests/test_egress.py`로 검증 — allowlist 체크가 npm_package 호스트 하나뿐이라
+      doctor에서 직접 거부를 재현할 수단이 없어 별도 pytest로 분리)
+- [x] `.gitignore` 에 `.env` 가 있고 `git status` 에 `.env` 가 안 뜬다
+- [x] `uv run ruff check` 통과, `uv run ty check` 결과 확인 (오탐 없음, 게이트 아님으로 유지)
 
 ## 막히면
 인증이 둘 다 없으면 여기서 막힌다 — 사내 계정이 SigV4인지 API key인지 먼저 확인.
