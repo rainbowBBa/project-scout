@@ -216,8 +216,8 @@ def _run_pipeline(
             stream_mode="updates",
         ):
             node_name, node_output = next(iter(update.items()))
-            typer.echo(f"[{STAGE_LABELS[node_name]}] 단계를 종료합니다.")
             _print_stage_summary(node_name, node_output)
+            typer.echo(f"[{STAGE_LABELS[node_name]}] 단계를 종료합니다.")
             if stop_after is not None and node_name == stop_after.value:
                 stopped_early = True
                 break
@@ -246,6 +246,7 @@ def _print_stage_summary(node_name: str, node_output: dict) -> None:
             typer.echo(
                 f"    [{c.necessity}] {c.name} ({c.kind}) — priority {c.priority}"
             )
+            typer.echo(f"      이유: {c.necessity_reason}")
 
 
 def _maybe_print_next_stage_banner(node_name: str) -> None:

@@ -53,7 +53,7 @@ class NonInteractive(Exception):
 
 def _default_ask(question: str) -> str:
     try:
-        return typer.prompt(f"? {question}", default="", show_default=False)
+        return typer.prompt(f"인터뷰 봇: {question}", default="", show_default=False)
     except (EOFError, typer.Abort):
         raise NonInteractive from None
 
