@@ -5,3 +5,5 @@ runs/
 *.db
 __pycache__/
 .ruff_cache/
+.pytest_cache/
+.claude/
