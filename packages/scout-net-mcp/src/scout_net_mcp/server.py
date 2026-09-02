@@ -1,22 +1,20 @@
-import httpx
+"""scout-net MCP 서버 — project-scout의 유일한 인터넷 출구 (04-아키텍처.md).
+
+scout(앱)을 import하지 않는다 — 워크스페이스 경계 (05-프로젝트관리.md).
+프로토타입은 stdio 전송만 쓴다.
+"""
+
 from mcp.server.fastmcp import FastMCP
 
-from scout_net_mcp.config import Settings
-from scout_net_mcp.egress import check_allowed
+from scout_net_mcp.providers import github, npm, pypi, search
 
 mcp = FastMCP("scout-net")
-_settings = Settings()
 
-
-@mcp.tool()
-async def npm_package(name: str) -> dict:
-    """npm 레지스트리에서 패키지 메타데이터를 조회한다 (스모크용 provider 1개)."""
-    url = f"https://registry.npmjs.org/{name}"
-    check_allowed(url, _settings)
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, timeout=10.0)
-        response.raise_for_status()
-        return response.json()
+mcp.tool()(npm.npm_search)
+mcp.tool()(npm.npm_package)
+mcp.tool()(pypi.pypi_package)
+mcp.tool()(github.github_repo_health)
+mcp.tool()(search.web_search)
 
 
 def main() -> None:
