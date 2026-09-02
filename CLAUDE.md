@@ -232,3 +232,8 @@ uv run scout show <slug> verify
   (`test_grounding` · `test_stale_regression` · `test_necessity_wiring` · `test_egress`)
 - **불확실한 건 단정하지 않는다.** `doctor`로 실측한 값을 `.env`에 고정하고,
   아직 모르는 건 문서에 "M0에서 확인"으로 남긴다
+- **`.env` 파일을 절대 직접 읽지 않는다.** `cat`·`Read`·`grep` 등 어떤 방식으로도 열어보지
+  않는다 — 크레덴셜 값을 실제로 볼 필요가 없다. 설정을 확인해야 하면 `doctor`나 테스트를
+  돌려서 그 출력(존재 여부·성공/실패)으로만 판단한다
+- **명시적으로 요청받지 않으면 worktree를 만들지 않는다.** 기본은 `main`에 바로 이어서
+  개발한다. worktree는 사용자가 "worktree로", "격리해서"처럼 직접 말했을 때만 쓴다
