@@ -9,6 +9,7 @@ from scout.schemas import (
     Candidate,
     Component,
     Fact,
+    FinalDesign,
     Interview,
     Verdict,
 )
@@ -112,6 +113,19 @@ CREATE TABLE IF NOT EXISTS picks (
     winner_reason TEXT,
     runner_up_note TEXT,
     margin TEXT
+);
+
+CREATE TABLE IF NOT EXISTS final_designs (
+    slug TEXT PRIMARY KEY,
+    summary TEXT NOT NULL,
+    shape TEXT NOT NULL,
+    data_flow TEXT NOT NULL,
+    changes_from_design_json TEXT NOT NULL,
+    stack_rationale TEXT NOT NULL,
+    integration_notes_json TEXT NOT NULL,
+    combination_risks_json TEXT NOT NULL,
+    build_order_json TEXT NOT NULL,
+    unresolved_json TEXT NOT NULL
 );
 """
 
@@ -636,6 +650,67 @@ def clear_picks(slug: str, component: str, *, runs_dir: str | None = None) -> No
         conn.execute(
             "DELETE FROM picks WHERE slug = ? AND component = ?", (slug, component)
         )
+
+
+def upsert_final_design(
+    slug: str, final: FinalDesign, *, runs_dir: str | None = None
+) -> None:
+    """확정 설계(v2). `designs`(v1) 행은 **건드리지 않는다** — 두 버전의 대조가
+    보고서의 재료다 (03-저장.md "designs와 final_designs가 따로인 이유").
+    """
+    with _conn(slug, runs_dir) as conn:
+        conn.execute(
+            """
+            INSERT INTO final_designs (
+                slug, summary, shape, data_flow, changes_from_design_json,
+                stack_rationale, integration_notes_json, combination_risks_json,
+                build_order_json, unresolved_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(slug) DO UPDATE SET
+                summary = excluded.summary,
+                shape = excluded.shape,
+                data_flow = excluded.data_flow,
+                changes_from_design_json = excluded.changes_from_design_json,
+                stack_rationale = excluded.stack_rationale,
+                integration_notes_json = excluded.integration_notes_json,
+                combination_risks_json = excluded.combination_risks_json,
+                build_order_json = excluded.build_order_json,
+                unresolved_json = excluded.unresolved_json
+            """,
+            (
+                slug,
+                final.summary,
+                final.shape,
+                final.data_flow,
+                json.dumps(final.changes_from_design, ensure_ascii=False),
+                final.stack_rationale,
+                json.dumps(final.integration_notes, ensure_ascii=False),
+                json.dumps(final.combination_risks, ensure_ascii=False),
+                json.dumps(final.build_order, ensure_ascii=False),
+                json.dumps(final.unresolved, ensure_ascii=False),
+            ),
+        )
+
+
+def get_final_design(slug: str, *, runs_dir: str | None = None) -> FinalDesign | None:
+    with _conn(slug, runs_dir) as conn:
+        row = conn.execute(
+            "SELECT * FROM final_designs WHERE slug = ?", (slug,)
+        ).fetchone()
+    if row is None:
+        return None
+    return FinalDesign(
+        summary=row["summary"],
+        shape=row["shape"],
+        data_flow=row["data_flow"],
+        changes_from_design=json.loads(row["changes_from_design_json"]),
+        stack_rationale=row["stack_rationale"],
+        integration_notes=json.loads(row["integration_notes_json"]),
+        combination_risks=json.loads(row["combination_risks_json"]),
+        build_order=json.loads(row["build_order_json"]),
+        unresolved=json.loads(row["unresolved_json"]),
+    )
 
 
 def get_picks(

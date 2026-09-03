@@ -485,3 +485,77 @@ EVALUATE_RETRY_HINT = (
     "scores는 후보마다 candidate·overall(1~5 정수)·score_reason을 갖고, "
     "ranking은 후보 이름 문자열의 목록이며, margin은 decisive/close 중 하나다."
 )
+
+# ── evaluate · 설계 확정 ──────────────────────────────────────────────────
+# 요소별 순위가 끝난 뒤 LLM 1회 (요소 수와 무관). 후보를 다시 비교하는 게 아니라
+# design의 기본틀을 조사 결과로 수정해 확정한다 (4-evaluate.md "4. 설계 확정").
+
+FINALIZE_SYSTEM_PROMPT = """당신은 조사가 끝난 뒤 **설계를 확정하는** 아키텍트다.
+`design`이 세운 기본틀과 요소별로 고른 것을 받아 FinalDesign 스키마를 채운다.
+
+이 단계는 기본틀을 **고치는** 일이고 새로 쓰는 일이 아니다.
+요소별 판단은 이미 끝났다 — 다시 하지 말고 인용해라. 당신이 판단하는 것은 **조합**이다.
+
+## ★ 앵커 1 — 바꿀 근거가 없으면 바꾸지 않는다
+
+shape·data_flow는 주어진 기본틀을 **출발점**으로 쓴다. 조사 결과에 근거가 있을 때만
+고치고, 고쳤으면 changes_from_design에 이유와 근거를 쓴다.
+
+  ✘ 문장을 매끄럽게 다시 쓰는 것은 변경이 아니다 — 근거 없는 재작성 금지
+  ✘ "표현을 다듬었다", "구조를 명확히 했다" 같은 항목을 changes_from_design에 넣지 마라
+  ✔ 판정의 cons·caveats 또는 탈락 사유가 구조 전제를 깨뜨렸을 때만 고친다
+
+바꿀 근거가 하나도 없으면 **기본틀의 shape·data_flow를 그대로 두고
+changes_from_design을 빈 목록으로 둔다.** 그게 정상이고, 기본틀이 조사를 견뎠다는
+정보다. 억지로 채우지 마라.
+
+changes_from_design의 각 항목은 **무엇이 · 왜 · 무엇을 근거로** 바뀌었는지를 담는다:
+  "요약 워커를 백엔드 프로세스에서 분리했다 — 같은 프로세스면 LLM 호출 지연이
+   WebSocket 이벤트 루프를 막는다. socket.io 판정의 caveats에서 나온 제약이다"
+
+## ★ 앵커 2 — combination_risks는 cons의 사본이 아니다
+
+**조합했을 때 비로소 생기는 위험**만 담는다. 개별 후보의 단점은 이미 판정에 있고
+보고서가 따로 보여준다 — 여기 옮겨 적으면 사용자가 같은 문장을 두 번 읽는다.
+
+  ✘ "socket.io는 독자 프로토콜을 쓴다"            ← 판정의 cons에 이미 있다
+  ✔ "단일 프로세스 전제가 깨지면 socket.io는 어댑터가 필요해지고,
+     PostgreSQL만으로 버티려던 전제도 함께 흔들린다"   ← 두 선택이 얽혀 생긴 위험
+
+없으면 빈 목록으로 둔다. 채우려고 cons를 재활용하지 마라.
+
+## 나머지 필드
+
+- summary: 확정된 설계 3~5문장. **고른 것들의 이름이 문장에 들어가야 한다.**
+  "적절한 라이브러리를 골랐다" 같은 추상 문장은 실패다
+- stack_rationale: 왜 이 조합인가. 이미 매긴 overall과 winner_reason을 인용한다.
+  **점수를 다시 합산하지 마라** — 평균이나 총점을 새로 만들지 않는다
+- integration_notes: **두 선택이 만나는 지점**과 주의. 개별 후보 설명이 아니다
+  ("룸 이름과 채널 ID를 같은 값으로 쓴다 — 매핑이 생기면 계산이 두 곳으로 갈린다")
+- build_order: 기본틀의 구축 순서를 **고른 것들의 이름으로** 다시 쓴다
+- unresolved: 승자 없는 요소 · 이번 실행에서 다루지 않은 요소 · 미해결 질문
+"""
+
+FINALIZE_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        ("system", FINALIZE_SYSTEM_PROMPT),
+        (
+            "human",
+            (
+                "프로젝트 명세:\n{refined_brief}\n\n"
+                "## 기본틀 (design이 세운 것 — 수정의 출발점)\n{architecture_block}\n\n"
+                "## 요소별로 고른 것 (이미 끝난 판단 — 다시 하지 말고 인용해라)\n"
+                "{picks_block}\n\n"
+                "## 설계가 깔고 있는 전제 (비교 없이 이미 정해진 결정)\n{closed_block}\n\n"
+                "## 미해결 (unresolved의 재료)\n{unresolved_block}\n"
+            ),
+        ),
+    ]
+)
+
+FINALIZE_RETRY_HINT = (
+    "형식을 정확히 지켜 스키마에 맞는 JSON만 다시 출력해라. "
+    "shape·data_flow는 문자열이고 비어 있으면 안 된다. "
+    "changes_from_design·integration_notes·combination_risks·build_order·unresolved는 "
+    "문자열 목록이다 (없으면 빈 목록)."
+)

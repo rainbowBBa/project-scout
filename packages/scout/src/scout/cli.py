@@ -326,6 +326,23 @@ def _print_stage_summary(node_name: str, node_output: dict) -> None:
                     f"        {score.candidate} overall {score.overall} — {score.score_reason}"
                 )
             typer.echo(f"      2위 참고: {pick.runner_up_note}")
+        final = node_output.get("final_design")
+        if final is None:
+            typer.echo("  확정 설계: 없음 (`scout show <slug> evaluate`의 gaps 참고)")
+        else:
+            typer.echo(f"\n  확정 설계: {final.summary}")
+            typer.echo(f"    구조: {final.shape}")
+            if final.changes_from_design:
+                typer.echo("    설계가 바뀐 곳:")
+                for change in final.changes_from_design:
+                    typer.echo(f"      - {change}")
+            else:
+                # 빈 것도 정보다 — 기본틀이 조사를 견뎠다 (불변식 12)
+                typer.echo(
+                    "    설계가 바뀐 곳: 없음 — 조사 결과가 기본틀을 바꾸지 않았다"
+                )
+            if final.unresolved:
+                typer.echo(f"    미해결 {len(final.unresolved)}건")
     elif node_name == "report":
         summary = node_output["report_summary"]
         for row in summary["stack"]:
@@ -386,9 +403,11 @@ def show(slug: str, stage: ShowStage) -> None:
     elif stage is ShowStage.verify:
         result = [v.model_dump() for v in store.get_verdicts(slug)]
     else:  # evaluate
+        final = store.get_final_design(slug)
         result = {
             "scores": store.get_scores(slug),
             "picks": store.get_picks(slug),
+            "final_design": final.model_dump() if final else None,
         }
 
     typer.echo(json.dumps(result, ensure_ascii=False, indent=2))

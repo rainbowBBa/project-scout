@@ -109,3 +109,24 @@ class ElementPick(BaseModel):
     winner_reason: str
     runner_up_note: str
     margin: Literal["decisive", "close"]
+
+
+class FinalDesign(BaseModel):
+    """`Architecture`(v1)를 조사 결과로 수정한 확정 설계(v2) — 별개 문서가 아니다.
+
+    `shape`·`data_flow`가 `Architecture`와 **같은 이름**인 것은 의도다. 그래야 v1↔v2
+    대조가 필드 단위로 성립하고, `report`가 LLM 없이 나란히 놓기만 해도 대조표가 된다
+    (4-evaluate.md "확정 설계는 기본틀의 수정판이다").
+    """
+
+    summary: str
+    shape: str
+    data_flow: str
+    # 무엇이 · 왜 · 무엇을 근거로 바뀌었나. 비면 "기본틀 유지"다 — 지우지 않는다(불변식 12)
+    changes_from_design: list[str] = Field(default_factory=list)
+    stack_rationale: str
+    integration_notes: list[str] = Field(default_factory=list)
+    # 조합해서 비로소 생기는 위험만. verdicts.cons의 사본이면 실패다
+    combination_risks: list[str] = Field(default_factory=list)
+    build_order: list[str] = Field(default_factory=list)
+    unresolved: list[str] = Field(default_factory=list)

@@ -6,6 +6,7 @@ from scout.schemas import (
     Candidate,
     Component,
     ElementPick,
+    FinalDesign,
     Interview,
     Verdict,
 )
@@ -25,5 +26,6 @@ class ScoutState(TypedDict, total=False):
     candidates: Annotated[list[Candidate], operator.add]
     verdicts: Annotated[list[Verdict], operator.add]
     element_picks: Annotated[list[ElementPick], operator.add]
+    final_design: FinalDesign
     report_path: str
     report_summary: dict

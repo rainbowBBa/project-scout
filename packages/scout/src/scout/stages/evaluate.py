@@ -23,15 +23,23 @@ from scout.prompts import (
     EVALUATE_MISMATCH_PROMPT,
     EVALUATE_PROMPT,
     EVALUATE_RETRY_HINT,
+    FINALIZE_PROMPT,
+    FINALIZE_RETRY_HINT,
 )
-from scout.schemas import ElementPick
+from scout.schemas import ElementPick, FinalDesign
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from langchain_aws import ChatBedrockConverse
 
-    from scout.schemas import Candidate, Component, Interview, Verdict
+    from scout.schemas import (
+        Architecture,
+        Candidate,
+        Component,
+        Interview,
+        Verdict,
+    )
     from scout.state import ScoutState
 
 # 계산된 점수 한 후보분 — (maturity, risk), 각각 (점수, 근거).
@@ -452,6 +460,121 @@ async def _run_evaluate(
     return picks, gaps
 
 
+# ── 설계 확정 ────────────────────────────────────────────────────────────
+
+
+def _architecture_block(architecture: Architecture | None) -> str:
+    if architecture is None:
+        return "(설계 본문이 없다 — 요소별 승자만으로 확정해라)"
+    order = " → ".join(architecture.build_order) or "(없음)"
+    return "\n".join(
+        [
+            f"요약: {architecture.summary}",
+            f"구조(shape): {architecture.shape}",
+            f"데이터 흐름(data_flow): {architecture.data_flow}",
+            f"구축 순서: {order}",
+            f"미해결 질문: {_bullets(architecture.open_questions)}",
+        ]
+    )
+
+
+def _picks_block(
+    picks: Sequence[ElementPick], verdict_by_name: dict[str, Verdict]
+) -> str:
+    blocks = []
+    for pick in picks:
+        lines = [
+            f"[{pick.component}] → {pick.winner} (margin {pick.margin})",
+            f"  고른 이유: {pick.winner_reason}",
+            f"  2위: {pick.runner_up_note}",
+        ]
+        verdict = verdict_by_name.get(pick.winner)
+        if verdict:
+            # 구조 전제를 깨뜨리는 게 있는지 — shape·data_flow 수정의 근거다
+            lines.append(f"  단점: {_bullets(verdict.cons)}")
+            lines.append(f"  유의: {_bullets(verdict.caveats)}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks) or "(고른 것이 없다)"
+
+
+def _closed_block(components: Sequence[Component]) -> str:
+    closed = [
+        f"- {c.name}: {c.no_comparison_reason or '(이유 없음)'}"
+        for c in components
+        if not c.needs_comparison
+    ]
+    return "\n".join(closed) or "(없음)"
+
+
+def _unresolved_block(
+    components: Sequence[Component], covered: set[str], verdicts: Sequence[Verdict]
+) -> str:
+    lines = []
+    for component in components:
+        if not component.needs_comparison or component.name in covered:
+            continue
+        if component.necessity in ("defer", "unnecessary"):
+            continue
+        judged = any(v.component == component.name for v in verdicts)
+        why = "전 후보 탈락" if judged else "이번 실행에서 조사하지 않음"
+        lines.append(f"- {component.name}: {why}")
+    return "\n".join(lines) or "(없음)"
+
+
+def finalize_design(
+    llm: ChatBedrockConverse,
+    architecture: Architecture | None,
+    picks: Sequence[ElementPick],
+    components: Sequence[Component],
+    verdicts: Sequence[Verdict],
+    interview: Interview,
+) -> FinalDesign:
+    """기본틀을 조사 결과로 수정해 확정한다 — LLM 1회, 요소 수와 무관하다.
+
+    후보를 다시 비교하지 않는다. 요소별 판단(`winner_reason`)은 인용하고, 판단하는
+    것은 **조합**이다 (4-evaluate.md "확정 설계는 기본틀의 수정판이다").
+    """
+    prompt_input = {
+        "refined_brief": interview.refined_brief,
+        "architecture_block": _architecture_block(architecture),
+        "picks_block": _picks_block(picks, {v.candidate: v for v in verdicts}),
+        "closed_block": _closed_block(components),
+        "unresolved_block": _unresolved_block(
+            components, {p.component for p in picks}, verdicts
+        ),
+    }
+    final, raw = invoke_structured(
+        FINALIZE_PROMPT,
+        llm.with_structured_output(FinalDesign, include_raw=True),
+        prompt_input,
+        FINALIZE_RETRY_HINT,
+    )
+    if final is None:
+        raise RuntimeError(f"FinalDesign 구조화 출력 파싱 실패: {raw}")
+    return final
+
+
+def fill_structure(
+    final: FinalDesign, architecture: Architecture | None
+) -> tuple[FinalDesign, list[str]]:
+    """확정 설계에 구조가 없으면 기본틀에서 복사한다.
+
+    구조 없는 확정 설계를 `report`에 넘기면 최상단 섹션이 비고 "수정 설계 완성"이
+    성립하지 않는다. 채우되 조용히 넘기지 않고 `gaps`에 남긴다.
+    """
+    warnings: list[str] = []
+    update: dict[str, str] = {}
+    for field in ("shape", "data_flow"):
+        if getattr(final, field).strip():
+            continue
+        if architecture is None:
+            warnings.append(f"확정 설계의 {field}가 비었고 기본틀도 없다")
+            continue
+        update[field] = getattr(architecture, field)
+        warnings.append(f"확정 설계의 {field}가 비어 기본틀 값을 그대로 썼다")
+    return (final.model_copy(update=update) if update else final), warnings
+
+
 def evaluate_node(state: ScoutState, *, llm: ChatBedrockConverse) -> dict:
     from scout.config import Settings
 
@@ -468,12 +591,13 @@ def evaluate_node(state: ScoutState, *, llm: ChatBedrockConverse) -> dict:
     # 계산된 점수는 남는다 (이중 안전망의 한쪽).
     computed = store_computed_scores(slug, candidates)
 
+    components = state.get("components") or store.get_components(slug)
     settings = Settings()
     picks, _ = asyncio.run(
         _run_evaluate(
             slug,
             candidates,
-            state.get("components") or store.get_components(slug),
+            components,
             verdicts,
             state["interview"],
             computed,
@@ -481,4 +605,27 @@ def evaluate_node(state: ScoutState, *, llm: ChatBedrockConverse) -> dict:
             settings.scout_llm_concurrency,
         )
     )
-    return {"element_picks": picks}
+
+    # ★ 확정은 요소별 픽이 **저장된 뒤**에 돈다 — 앞에 두면 확정이 실패할 때
+    # 요소별 결과까지 함께 날아간다 (불변식 11).
+    if not picks:
+        store.add_gap(slug, "evaluate", "1위가 없어 설계 확정을 건너뜀")
+        return {"element_picks": picks}
+
+    architecture = state.get("architecture") or store.get_design(slug)
+    if architecture is None:
+        store.add_gap(slug, "evaluate", "설계 본문 없음 — 요소별 승자만으로 확정한다")
+    try:
+        final = finalize_design(
+            llm, architecture, picks, components, verdicts, state["interview"]
+        )
+    except Exception as e:  # noqa: BLE001 — 확정 실패가 요소별 순위를 무르지 않는다
+        store.add_gap(slug, "evaluate", f"설계 확정 실패: {e}")
+        return {"element_picks": picks}
+
+    final, warnings = fill_structure(final, architecture)
+    store.upsert_final_design(slug, final)
+    for warning in warnings:
+        store.add_gap(slug, "evaluate", warning)
+
+    return {"element_picks": picks, "final_design": final}
