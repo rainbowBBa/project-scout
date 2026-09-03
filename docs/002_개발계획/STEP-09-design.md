@@ -75,20 +75,35 @@ name 기술 중립 (편향 방지)
 
 ## 완료 기준
 
-- [ ] `uv run pytest` — 기존 4종이 그대로 통과한다 (공유 모듈 추출이 아무것도 깨지 않았다)
+> **상태 (2026-09-03)** — 코드는 완성됐고 커밋됐다(`fecef01`). 표시가 `[~]`인 항목은
+> **부분 근거만 있고** 저장까지 확인하지 못한 것이고, `[ ]`는 E2E가 필요한 것이다.
+> E2E는 `design`의 구조화 출력 파싱에서 한 번 죽었다 — 원인은 이 STEP의 코드가 아니라
+> `invoke_structured`가 첫 `tool_call`만 보는 것이었다(아래 "막히면" 참고).
+
+- [x] `uv run pytest` — 기존 4종이 그대로 통과한다 (공유 모듈 추출이 아무것도 깨지 않았다)
+      → **34개 통과** (기존 28 + `test_llm_cache` 6)
 - [ ] `uv run scout run "사내 200명이 쓰는 AI 요약 팀 채팅 앱, 3인 TypeScript 팀, 3개월" --stop-after design --auto-approve-search` 가 완주한다
+      → 1회차 `RuntimeError: Design 구조화 출력 파싱 실패`. 파서 수정 후 재실행 확인 대기
 - [ ] `scout show <slug> design` 에 **`Architecture` 본문**이 있다 —
       `shape` · `data_flow` · `build_order` 가 비어 있지 않다
-- [ ] **통과한 결정 지점의 `search_hints`가 전부 비어 있지 않고 영어 기술 어휘다** —
+- [~] **통과한 결정 지점의 `search_hints`가 전부 비어 있지 않고 영어 기술 어휘다** —
       요소 이름을 그대로 복사한 것이면 실패
+      → 응답 원본에서 확인됨: `['socket.io', 'ws websocket library node',
+        'websocket reconnection room …']` · `['redis cache', 'ioredis typescript', …]` ·
+        `['docker nodejs', 'github actions deploy', 'railway vercel render', …]`.
+        에이전트의 `npm_search` 질의도 영어였다(`ORM TypeScript PostgreSQL prisma
+        typeorm` 등). **DB 저장까지 확인은 재실행 대기**
 - [ ] `decision_question` 이 "무엇을 정해야 하는가"의 형태다 (`role_in_design`의 복사가 아니다)
 - [ ] `constraints` 가 `refined_brief`의 제약(인원·기간·기술)을 근거로 든다
 - [ ] `needs_comparison=false` 가 최소 1개 나오고 `no_comparison_reason`이 채워진다
 - [ ] `necessity` 가 `defer`/`unnecessary`를 최소 1개 낸다 (STEP 03에서 지키던 기준)
-- [ ] `designs` 1행 + `components` 6~10행이 저장된다. 걸러진 것도 전부 남는다
+- [~] `designs` 1행 + `components` 6~10행이 저장된다. 걸러진 것도 전부 남는다
+      → **테이블 10개가 실제 DB에 생성됨**(`designs` 포함) · `store` 왕복과 통과 필터
+        2축(`necessity` + `needs_comparison`)을 스모크로 확인. 행 채움은 재실행 대기
 - [ ] `web_search` 승인 프롬프트가 **최대 3번**까지만 뜬다
+      → 1회차에서 에이전트가 `npm_search`만 썼다 — 웹검색 경로는 아직 안 타봤다
 - [ ] `--auto-approve-search` 없이 전부 거부해도 설계가 나온다 (레지스트리 + LLM 지식만으로)
-- [ ] `uv run ruff check` 통과
+- [x] `uv run ruff check` 통과
 
 ## 막히면
 
@@ -109,3 +124,10 @@ name 기술 중립 (편향 방지)
 
 **설계 산문이 길어지는 걸 참는다** — `Architecture.summary`는 3~5문장이다.
 길이가 늘면 `evaluate`의 설계 확정 프롬프트가 재료에 파묻힌다.
+
+**`Design 구조화 출력 파싱 실패`가 나면 프롬프트를 의심하기 전에 `tool_call` 개수를 본다.**
+실측에서 모델이 한 응답에 `tool_use` 블록을 **두 개** 냈고, `with_structured_output`의
+파서는 `first_tool_only=True`라 **첫 블록만** 본다 — 첫 블록이 불완전하면 같은 응답에
+완전한 블록이 있어도 전체가 실패한다. `Design`처럼 필드가 많은 스키마에서 특히 난다.
+`llm.py`의 `_salvage`가 재시도 전에 나머지 블록을 훑어 구제하고, 실패 시 `parsing_error`를
+메시지에 붙인다. 그게 없으면 원인 진단이 로그 고고학이 된다.

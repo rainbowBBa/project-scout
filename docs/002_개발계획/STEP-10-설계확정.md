@@ -56,8 +56,37 @@ shape·data_flow 는 Architecture 를 출발점으로 쓴다. 조사 결과에 �
 
 ## 완료 기준
 
+> **상태 (2026-09-03)** — 코드는 완성됐고 커밋됐다(`5b55985`). 구조·저장·실패 경로는
+> LLM 없이 검증했다. `[ ]`로 남은 것은 **확정 설계의 내용 품질**이고, E2E가
+> `design` 단계에서 아직 `evaluate`까지 도달하지 못해 보지 못했다
+> (STEP-09의 파싱 이슈 — 이 STEP의 코드 문제가 아니다).
+
+### 구조 · 저장 · 실패 처리 (LLM 없이 확인됨)
+
+- [x] `designs` 행이 **덮어쓰이지 않는다** (`shape`를 SELECT 해서 확인)
+      → `브라우저 → Node → PG`(v1) vs `워커 분리`(v2)로 **필드 단위 대조 성립**
+- [x] 승자 없는 요소 · 통과 못한 요소가 `unresolved`에 나타난다
+      → 프롬프트 재료 블록 검증: `인증: 이번 실행에서 조사하지 않음`이 들어가고
+        `defer`인 `전문검색`은 들어가지 않는다
+- [x] **설계 확정이 실패해도 요소별 순위가 남는다** — `finalize_design`을 일부러
+      깨뜨려 확인했다. `picks`·`scores`·`designs`가 그대로 남고 `gaps`에
+      `설계 확정 실패: ...`만 기록된다
+- [x] 요소별 LLM 호출 수가 늘지 않았다 — 확정은 **요소 수와 무관하게 1회**다
+      → `finalize_design`은 루프 밖 1곳, `judge_element`는 요소별 (코드 위치 확인)
+- [x] 1위가 하나도 없으면(전 요소 후보 탈락) 확정을 부르지 않는다
+      → `if not picks:` 가드 + `gaps` 기록 (코드 경로 확인)
+- [x] `shape`·`data_flow`가 비면 `fill_structure`가 기본틀에서 복사하고 `gaps`에 남긴다
+      → 빈 구조 입력에서 경고 2건 확인
+- [x] 프롬프트 재료 5개 블록이 의도대로 조립된다 — 기본틀(구조·흐름·구축 순서·미해결) ·
+      승자 + **`cons`·`caveats`**(수정의 근거) · 닫힌 결정 · 미해결.
+      `designs`가 없으면 "설계 본문이 없다"로 대체된다
+- [x] 문서(`03-저장.md` · `4-evaluate.md`)와 필드 9개·컬럼명이 일치한다
+
+### 내용 품질 (E2E 필요 — 미확인)
+
 - [ ] `uv run scout run "..." --stop-after evaluate --auto-approve-search` 가 완주한다
 - [ ] `scout show <slug> evaluate` 에 `final_designs` 1행이 나온다
+      (`store` 왕복 자체는 스모크로 확인 — 실제 실행에서 채워지는지가 남았다)
 - [ ] `summary` 에 **고른 후보 이름이 실제로 들어 있다** ("적절한 라이브러리를 골랐다" 같은
       추상 문장이면 실패)
 - [ ] **`shape`·`data_flow`가 채워진다** — 확정 설계에 구조가 없으면 이 STEP이 성립하지 않는다
@@ -65,15 +94,9 @@ shape·data_flow 는 Architecture 를 출발점으로 쓴다. 조사 결과에 �
       (`verdicts`의 `cons`·`caveats` 또는 탈락 사유)
 - [ ] **바꿀 근거가 없을 때 `Architecture`를 그대로 유지하고 변경 목록이 빈다** —
       매번 산문을 새로 쓰면 앵커 1이 안 먹힌 것이다
-- [ ] `designs` 행이 **덮어쓰이지 않는다** (`shape`를 SELECT 해서 확인)
 - [ ] `integration_notes` 가 **두 선택이 만나는 지점**을 짚는다 (개별 후보 설명이 아니다)
 - [ ] `combination_risks` 가 `verdicts.cons`·`caveats`의 사본이 아니다 (육안 확인)
 - [ ] `build_order` 가 `Architecture.build_order`를 고른 것들의 이름으로 다시 쓴 형태다
-- [ ] 승자 없는 요소 · 통과 못한 요소가 `unresolved`에 나타난다
-- [ ] **설계 확정이 실패해도 요소별 순위가 남는다** — `FINALIZE` 프롬프트를 일부러 깨뜨려
-      확인한다. `gaps`에 기록되고 `scores`/`picks`는 그대로다
-- [ ] 요소별 LLM 호출 수가 늘지 않았다 — 확정은 **요소 수와 무관하게 1회**다
-- [ ] 1위가 하나도 없으면(전 요소 후보 탈락) 확정을 부르지 않는다
 
 ## 막히면
 

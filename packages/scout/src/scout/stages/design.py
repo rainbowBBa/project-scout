@@ -80,6 +80,7 @@ async def run_design(
             "transcript": build_transcript(collect_tool_calls(messages), messages),
         },
         DESIGN_EXTRACT_RETRY_HINT,
+        schema=Design,
     )
     if design is None:
         raise RuntimeError(f"Design 구조화 출력 파싱 실패: {raw}")

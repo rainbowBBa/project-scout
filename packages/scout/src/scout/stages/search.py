@@ -289,6 +289,7 @@ async def _search_component(
             "max_candidates": max_candidates,
         },
         SEARCH_EXTRACT_RETRY_HINT,
+        schema=CandidateList,
     )
     if parsed is None:
         raise RuntimeError(f"CandidateList 구조화 출력 파싱 실패: {raw}")

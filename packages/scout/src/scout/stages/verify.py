@@ -82,7 +82,7 @@ def judge_candidate(
 
     structured_llm = llm.with_structured_output(Verdict, include_raw=True)
     verdict, raw = invoke_structured(
-        prompt, structured_llm, prompt_input, VERIFY_RETRY_HINT
+        prompt, structured_llm, prompt_input, VERIFY_RETRY_HINT, schema=Verdict
     )
     if verdict is None:
         raise RuntimeError(f"Verdict 구조화 출력 파싱 실패: {raw}")

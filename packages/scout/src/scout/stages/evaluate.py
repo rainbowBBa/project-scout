@@ -127,7 +127,11 @@ def judge_element(
     structured_llm = llm.with_structured_output(ElementPick, include_raw=True)
 
     pick, raw = invoke_structured(
-        EVALUATE_PROMPT, structured_llm, prompt_input, EVALUATE_RETRY_HINT
+        EVALUATE_PROMPT,
+        structured_llm,
+        prompt_input,
+        EVALUATE_RETRY_HINT,
+        schema=ElementPick,
     )
     if pick is None:
         raise RuntimeError(f"ElementPick 구조화 출력 파싱 실패: {raw}")
@@ -141,6 +145,7 @@ def judge_element(
                 "mismatch": f"winner={pick.winner} / ranking[0]={pick.ranking[0]}",
             },
             EVALUATE_RETRY_HINT,
+            schema=ElementPick,
         )
         if retry is not None:
             pick = retry
@@ -548,6 +553,7 @@ def finalize_design(
         llm.with_structured_output(FinalDesign, include_raw=True),
         prompt_input,
         FINALIZE_RETRY_HINT,
+        schema=FinalDesign,
     )
     if final is None:
         raise RuntimeError(f"FinalDesign 구조화 출력 파싱 실패: {raw}")

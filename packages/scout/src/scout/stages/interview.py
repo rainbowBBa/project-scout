@@ -79,6 +79,7 @@ def _decide_next_turn(
         structured_llm,
         {"history": history},
         INTERVIEW_TURN_RETRY_HINT,
+        schema=InterviewTurn,
     )
     return turn
 
@@ -97,6 +98,7 @@ def _synthesize_interview(
         structured_llm,
         prompt_input,
         INTERVIEW_SYNTHESIS_RETRY_HINT,
+        schema=Interview,
     )
     if interview is None:
         raise RuntimeError(f"Interview 구조화 출력 파싱 실패: {raw}")
