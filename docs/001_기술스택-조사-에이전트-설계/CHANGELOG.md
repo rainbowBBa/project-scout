@@ -37,10 +37,21 @@ LLM 생성물이 되어 **grounding은 통과하는데 사실은 환각인** 상
 `STAGE_LABELS`·`STAGE_ORDER.index()`가 죽는다. `search` 노드 하나가 내부에서
 `asyncio.gather`로 펼친다.
 
-구현 중 실측으로 드러난 것: `create_react_agent`를 **`checkpointer=False`로 컴파일해야
-한다.** 안 주면 바깥 그래프의 `SqliteSaver`(동기 전용)를 물려받는데 이 에이전트는
-`ainvoke`로 돌아 `"SqliteSaver does not support async methods"`로 죽는다.
-(그때도 파이프라인은 안 죽고 `gaps`에 기록됐다 — 불변식 11이 작동한 증거다.)
+에이전트 팩토리는 **`langchain.agents.create_agent`**를 쓴다.
+`langgraph.prebuilt.create_react_agent`는 deprecated고(호출하면
+`LangGraphDeprecationWarning`), `langchain` v1이 `create_agent`로 흡수했다. 바뀌는 건
+`prompt=` → `system_prompt=` 하나뿐이고 입력(`{"messages": [...]}`)·출력
+(`result["messages"]`)·`ToolNode` 계약은 동일하다. `scout` 패키지에 `langchain` 의존성이
+하나 늘었다(전이 의존성은 0 — 이미 다 깔려 있었다).
+
+구현 중 실측으로 드러난 것 둘:
+
+- **`checkpointer=False`로 컴파일해야 한다.** 안 주면 바깥 그래프의 `SqliteSaver`
+  (동기 전용)를 물려받는데 이 에이전트는 `ainvoke`로 돌아
+  `"SqliteSaver does not support async methods"`로 죽는다.
+  (그때도 파이프라인은 안 죽고 `gaps`에 기록됐다 — 불변식 11이 작동한 증거다.)
+- **`recursion_limit`을 호출마다 넘겨야 한다.** `create_agent`는 그래프에 **9999**를
+  바인딩해둔다 — 안 넘기면 툴 루프가 사실상 무제한으로 돈다.
 
 ### 2. `web_search`에 사람 승인 게이트를 넣었다 (신규)
 
@@ -65,7 +76,7 @@ LLM 생성물이 되어 **grounding은 통과하는데 사실은 환각인** 상
 **`interrupt()`를 쓰지 않았다.** LangGraph 정석 HITL이지만 (1) MCP 툴이 async 전용이라
 바깥 그래프까지 `astream`+`AsyncSqliteSaver`로 다시 짜야 하고, (2) `interrupt()`는 노드를
 처음부터 재실행하는데 거부→재질의 루프는 왕복마다 그 비용이 붙고, (3)
-`create_react_agent`는 툴 콜마다 별도 태스크라 동시 interrupt에 id 맵 resume가 강제된다.
+`create_agent`는 툴 콜마다 별도 태스크라 동시 interrupt에 id 맵 resume가 강제된다.
 대신 `interview`가 이미 쓰는 주입 콜러블 패턴(`Approve` + `NonInteractive`)을 따랐다 —
 **이 콜러블이 나중에 `interrupt()`로 갈아끼울 이음매다.**
 

@@ -123,7 +123,9 @@ if parsed is None:  # 재시도까지 실패 — Verdict 처럼 필드 많은 �
 ### MCP 툴 호출 — `search`는 에이전트가 고른다
 
 ```python
-agent = create_react_agent(llm, tools, prompt=..., checkpointer=False)  # 툴 선택은 LLM
+from langchain.agents import create_agent   # langgraph.prebuilt.create_react_agent는 deprecated
+
+agent = create_agent(llm, tools, system_prompt=..., checkpointer=False)  # 툴 선택은 LLM
 result = await agent.ainvoke({"messages": [...]}, config={"recursion_limit": 40})
 facts = facts_for_candidate(collect_tool_calls(result["messages"]), name, now)  # 값은 코드가
 ```

@@ -109,8 +109,10 @@ gaps가 핵심 항목을 포함하면 judge는 `confidence: low`를 내야 한�
 
 ## 동작 — ReAct 에이전트
 
-요소마다 `create_react_agent` 하나를 돌린다. 에이전트가 툴을 직접 고르고, 여러 번
-부른다.
+요소마다 `langchain.agents.create_agent` 하나를 돌린다. 에이전트가 툴을 직접 고르고,
+여러 번 부른다. (`langgraph.prebuilt.create_react_agent`는 deprecated —
+`langchain` v1이 `create_agent`로 흡수했다. 바뀌는 건 `prompt=` → `system_prompt=`
+하나뿐이고 입출력 계약은 같다.)
 
 ```
 요소 "실시간 메시지 전달"
@@ -164,8 +166,11 @@ npm_package·github_repo_health로 사실을 모으고, 웹검색으로 method �
 유지하면 CLI의 단계 배너 계약이 그대로 성립한다. `verify`에서 `Send`가 정말 필요해지면
 그때 스트림 루프를 함께 고친다.
 
-`create_react_agent`는 `checkpointer=False`로 컴파일한다 — 안 주면 바깥 그래프의
+`create_agent`는 `checkpointer=False`로 컴파일한다 — 안 주면 바깥 그래프의
 `SqliteSaver`(동기 전용)를 물려받는데 이 에이전트는 `ainvoke`로 돈다.
+
+`recursion_limit`도 호출할 때마다 넘긴다 — `create_agent`는 그래프에 **9999**를
+바인딩해두기 때문에, 안 넘기면 툴 루프가 사실상 무제한으로 돈다.
 
 MCP 서버의 디스크 캐시(24h)가 있어서 재실행 시 HTTP는 대부분 캐시에서 나온다.
 
@@ -209,12 +214,11 @@ LangGraph의 정석 HITL은 `interrupt()`다. 여기서는 `interview`가 이미
    모델까지 다시 짜야 한다
 2. **`interrupt()`는 노드를 처음부터 재실행한다.** 거부→재질의 루프는 왕복마다
    재실행이 붙는다
-3. **동시 interrupt가 여러 개면 id 맵 resume가 강제된다.** `create_react_agent`는
-   `version="v2"`에서 툴 콜마다 별도 태스크라, 스칼라 `Command(resume=)`는
-   `RuntimeError`가 난다
+3. **동시 interrupt가 여러 개면 id 맵 resume가 강제된다.** `create_agent`는 툴 콜마다
+   별도 태스크라, 스칼라 `Command(resume=)`는 `RuntimeError`가 난다
 
-**승인 콜러블이 나중에 `interrupt()`로 갈아끼울 이음매다** — 이 문서가
-`create_react_agent` 자리를 미리 남겨뒀던 것과 같은 방식으로 남긴다.
+**승인 콜러블이 나중에 `interrupt()`로 갈아끼울 이음매다** — 이 문서가 에이전트 자리를
+미리 남겨뒀던 것과 같은 방식으로 남긴다.
 
 ---
 

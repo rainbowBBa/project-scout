@@ -33,5 +33,6 @@
 승인 프롬프트가 너무 자주 뜨면 `_MAX_WEB_SEARCHES`를 줄인다. 반대로 method 후보의
 근거가 부족하면 늘린다.
 
-`create_react_agent`는 `checkpointer=False`로 컴파일해야 한다 — 안 주면 바깥 그래프의
-`SqliteSaver`(동기 전용)를 물려받아 `ainvoke`에서 죽는다.
+`create_agent`는 `checkpointer=False`로 컴파일해야 한다 — 안 주면 바깥 그래프의
+`SqliteSaver`(동기 전용)를 물려받아 `ainvoke`에서 죽는다. `recursion_limit`도 호출마다
+넘긴다 (그래프에 9999가 바인딩돼 있다).

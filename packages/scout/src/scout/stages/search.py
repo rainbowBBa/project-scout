@@ -1,6 +1,6 @@
 """search 단계 — ReAct 에이전트가 툴을 골라 후보를 찾고 dossier를 모은다.
 
-요소마다 `create_react_agent` 하나를 돌린다 (001/stages/2-search.md). 에이전트는
+요소마다 `langchain.agents.create_agent` 하나를 돌린다 (001/stages/2-search.md). 에이전트는
 **어떤 툴을 부를지만** 정한다 — `Fact.value`는 에이전트가 쓴 문장이 아니라
 `ToolMessage`의 원본 payload에서 코드가 뽑는다. 이 경계가 무너지면 judge가 인용하는
 dossier 자체가 LLM 생성물이 되어 불변식 4가 지탱하던 "judge는 사실을 지어낼 수 없다"가
@@ -23,9 +23,9 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import typer
+from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import StructuredTool
-from langgraph.prebuilt import create_react_agent
 
 from scout import store
 from scout.llm import invoke_structured
@@ -187,11 +187,17 @@ class ToolCall:
 
 
 def message_text(message: Any) -> str:
-    """`.text`는 langchain-core 1.x에서 메서드 → 프로퍼티로 바뀌었다. 둘 다 받는다."""
+    """`.text`는 langchain-core 1.x에서 메서드 → 프로퍼티로 바뀌었다.
+
+    호환 기간이라 프로퍼티가 **호출도 되는** 문자열을 돌려준다 — `callable()`을 먼저
+    보면 구형 경로로 빠져 deprecation 경고가 뜬다. 문자열 판정을 앞에 둔다.
+    """
     text = getattr(message, "text", None)
+    if isinstance(text, str):
+        return text
     if callable(text):
-        text = text()
-    return text if isinstance(text, str) else str(getattr(message, "content", ""))
+        return str(text())
+    return str(getattr(message, "content", ""))
 
 
 def _parse_payload(content: Any) -> dict | None:
@@ -447,10 +453,10 @@ async def _search_component(
 
     # checkpointer=False — 안 주면 바깥 그래프의 SqliteSaver(동기 전용)를 물려받는데
     # 이 에이전트는 ainvoke로 돈다 ("SqliteSaver does not support async methods").
-    agent = create_react_agent(
+    agent = create_agent(
         llm,
         list(tools.values()),
-        prompt=SEARCH_AGENT_SYSTEM_PROMPT,
+        system_prompt=SEARCH_AGENT_SYSTEM_PROMPT,
         checkpointer=False,
     )
     task = SEARCH_AGENT_TASK_PROMPT.format(
@@ -462,6 +468,8 @@ async def _search_component(
         refined_brief=interview.refined_brief,
     )
 
+    # recursion_limit을 반드시 넘긴다 — create_agent는 그래프에 9999를 바인딩해둔다.
+    # 안 넘기면 툴 루프가 사실상 무제한으로 돈다.
     result = await agent.ainvoke(
         {"messages": [HumanMessage(task)]},
         config={"recursion_limit": _RECURSION_LIMIT},
