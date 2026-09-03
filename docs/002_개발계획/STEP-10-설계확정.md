@@ -56,15 +56,15 @@ shape·data_flow 는 Architecture 를 출발점으로 쓴다. 조사 결과에 �
 
 ## 완료 기준
 
-> **상태 (2026-09-03)** — 코드는 완성됐고 커밋됐다(`5b55985`). 구조·저장·실패 경로는
-> LLM 없이 검증했다. `[ ]`로 남은 것은 **확정 설계의 내용 품질**이고, E2E가
-> `design` 단계에서 아직 `evaluate`까지 도달하지 못해 보지 못했다
-> (STEP-09의 파싱 이슈 — 이 STEP의 코드 문제가 아니다).
+> **상태 (2026-09-03)** — 코드 완료(`5b55985`) · **E2E 완주로 내용까지 확인**.
+> 이 E2E는 토큰 쿼터 때문에 Haiku로 돌렸다 — 배선과 조립은 확인됐지만
+> **판단 품질은 정본 모델(Sonnet)에서 다시 본다**
+> ([08-설정](../001_기술스택-조사-에이전트-설계/08-설정.md) "SCOUT_MODEL_ID").
 
 ### 구조 · 저장 · 실패 처리 (LLM 없이 확인됨)
 
 - [x] `designs` 행이 **덮어쓰이지 않는다** (`shape`를 SELECT 해서 확인)
-      → `브라우저 → Node → PG`(v1) vs `워커 분리`(v2)로 **필드 단위 대조 성립**
+      → 스모크로 확인 + **실행에서도 v1 ≠ v2**로 필드 단위 대조가 성립했다
 - [x] 승자 없는 요소 · 통과 못한 요소가 `unresolved`에 나타난다
       → 프롬프트 재료 블록 검증: `인증: 이번 실행에서 조사하지 않음`이 들어가고
         `defer`인 `전문검색`은 들어가지 않는다
@@ -82,21 +82,28 @@ shape·data_flow 는 Architecture 를 출발점으로 쓴다. 조사 결과에 �
       `designs`가 없으면 "설계 본문이 없다"로 대체된다
 - [x] 문서(`03-저장.md` · `4-evaluate.md`)와 필드 9개·컬럼명이 일치한다
 
-### 내용 품질 (E2E 필요 — 미확인)
+### 내용 품질 (E2E로 확인 — Haiku 기준)
 
-- [ ] `uv run scout run "..." --stop-after evaluate --auto-approve-search` 가 완주한다
-- [ ] `scout show <slug> evaluate` 에 `final_designs` 1행이 나온다
-      (`store` 왕복 자체는 스모크로 확인 — 실제 실행에서 채워지는지가 남았다)
-- [ ] `summary` 에 **고른 후보 이름이 실제로 들어 있다** ("적절한 라이브러리를 골랐다" 같은
-      추상 문장이면 실패)
-- [ ] **`shape`·`data_flow`가 채워진다** — 확정 설계에 구조가 없으면 이 STEP이 성립하지 않는다
-- [ ] `changes_from_design`의 각 항목이 **조사 결과를 근거로 든다**
-      (`verdicts`의 `cons`·`caveats` 또는 탈락 사유)
-- [ ] **바꿀 근거가 없을 때 `Architecture`를 그대로 유지하고 변경 목록이 빈다** —
-      매번 산문을 새로 쓰면 앵커 1이 안 먹힌 것이다
-- [ ] `integration_notes` 가 **두 선택이 만나는 지점**을 짚는다 (개별 후보 설명이 아니다)
-- [ ] `combination_risks` 가 `verdicts.cons`·`caveats`의 사본이 아니다 (육안 확인)
-- [ ] `build_order` 가 `Architecture.build_order`를 고른 것들의 이름으로 다시 쓴 형태다
+- [x] `uv run scout run "..." --auto-approve-search` 가 완주한다 (`report.html`까지)
+- [x] `scout show <slug> evaluate` 에 `final_designs` 1행이 나온다
+- [x] `summary` 에 **고른 후보 이름이 실제로 들어 있다**
+      → "Express + Socket.io(인메모리 어댑터)로 실시간 메시지 전달을 지원하고,
+        Bull 기반 백그라운드 작업 큐로 … Prisma ORM으로 PostgreSQL에 …"
+- [x] **`shape`·`data_flow`가 채워진다** — 확정 설계에 구조가 없으면 이 STEP이 성립하지 않는다
+- [x] `integration_notes` 가 **두 선택이 만나는 지점**을 짚는다 (개별 후보 설명이 아니다)
+      → "Socket.io와 Bull 큐 연계: … Redis 어댑터로 확장하면 워커 프로세스가
+        Redis pub/sub을 거쳐 메시지를 전달해야 함"
+- [x] `combination_risks` 가 `verdicts.cons`·`caveats`의 사본이 아니다
+      → "단일 서버 인메모리 어댑터는 서버 재시작 시 Socket 연결 상태를 손실 —
+        Redis 어댑터 마이그레이션 일정을 3개월 마일스톤에 포함해야" (조합·배포 전제의 위험)
+- [x] `build_order` 가 `Architecture.build_order`를 고른 것들의 이름으로 다시 쓴 형태다
+      → "Prisma 스키마 및 PostgreSQL 설정" · "Express 기본 서버 + Socket.io 인메모리 어댑터 연결"
+- [~] `changes_from_design`의 각 항목이 **조사 결과를 근거로 든다** ·
+      **바꿀 근거가 없으면 `Architecture`를 유지하고 변경 목록이 빈다**
+      → Haiku에서 변경 목록이 **비었다**(앵커 1이 과하게 먹은 쪽). 그런데 `shape`는
+        미세하게 달라졌다 — v1 `Socket.io 실시간 계층(Express + Socket.io)` →
+        v2 `(… 인메모리 어댑터)`. 어댑터 명시는 후보 선정의 반영이므로 변경 목록에
+        적혔어야 한다. **Sonnet에서 다시 본다** — 판단 품질 항목이다
 
 ## 막히면
 

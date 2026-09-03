@@ -62,6 +62,15 @@
     font-size: 0.9rem;
   }
   .empty { color: var(--muted); font-style: italic; }
+  /* 최상단 권장 설계 — 가장 먼저 읽어야 하는 섹션이라 테두리로 분리한다 */
+  .final-design { border: 2px solid var(--accent); border-radius: 8px; padding: 0 1.2rem 1rem; }
+  .final-design > h2 { margin-top: 1rem; }
+  .lead { font-size: 1.08rem; line-height: 1.65; }
+  /* shape·data_flow는 여러 줄 산문이다 — pre-wrap 없이는 한 줄로 뭉친다 */
+  pre.prose {
+    white-space: pre-wrap; word-break: break-word; margin: 0;
+    font-family: inherit; font-size: 0.95rem; line-height: 1.6;
+  }
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 0.4rem 0.5rem; vertical-align: top; }
   thead th { color: var(--muted); font-weight: 500; font-size: 0.85rem; border-bottom: 1px solid var(--border); }
@@ -132,6 +141,94 @@
 <div class="banner">⚠ 파이프라인이 끝까지 실행되지 않았습니다 — 아래는 지금까지 저장된 결과입니다.</div>
 {% endif %}
 
+{# ★ 최상단 — 사용자가 가장 먼저 읽어야 하는 것. evaluate가 기본틀을 조사 결과로
+   수정한 확정 설계(v2)다. report는 LLM을 쓰지 않으므로 렌더링만 한다 (불변식 7). #}
+<section class="final-design">
+  <h2>★ 권장 설계</h2>
+  {% if final_design %}
+  <p class="lead">{{ final_design.summary }}</p>
+
+  <h3>구조</h3>
+  <pre class="prose">{{ final_design.shape }}</pre>
+  <h3>데이터 흐름</h3>
+  <pre class="prose">{{ final_design.data_flow }}</pre>
+
+  <h3>설계가 어떻게 바뀌었나</h3>
+  {% if final_design.changes_from_design %}
+  <ul class="plain">{% for c in final_design.changes_from_design %}<li>{{ c }}</li>{% endfor %}</ul>
+  {% else %}
+  {# 빈 것도 정보다 — 기본틀이 조사를 견뎠다 (불변식 12) #}
+  <p class="empty">조사 결과가 기본틀을 바꾸지 않았습니다 — 설계가 조사를 견뎠습니다.</p>
+  {% endif %}
+
+  <h3>왜 이 조합인가</h3>
+  <p>{{ final_design.stack_rationale }}</p>
+
+  <h3>무엇부터</h3>
+  {% if final_design.build_order %}
+  <ol class="plain">{% for s in final_design.build_order %}<li>{{ s }}</li>{% endfor %}</ol>
+  {% else %}
+  <p class="empty">해당 없음 — 구축 순서가 산출되지 않았습니다.</p>
+  {% endif %}
+
+  <h3>붙이는 지점 · 주의</h3>
+  {% if final_design.integration_notes %}
+  <ul class="plain">{% for n in final_design.integration_notes %}<li>{{ n }}</li>{% endfor %}</ul>
+  {% else %}
+  <p class="empty">해당 없음 — 조합에서 특별히 붙일 지점이 지적되지 않았습니다.</p>
+  {% endif %}
+
+  <h3>조합 고유 위험</h3>
+  {% if final_design.combination_risks %}
+  <ul class="plain">{% for r in final_design.combination_risks %}<li>{{ r }}</li>{% endfor %}</ul>
+  {% else %}
+  <p class="empty">해당 없음 — 조합해서 생기는 위험이 지적되지 않았습니다. 개별 후보의 단점은 "요소별 비교"에 있습니다.</p>
+  {% endif %}
+
+  <h3>미해결</h3>
+  {% if final_design.unresolved %}
+  <ul class="plain">{% for u in final_design.unresolved %}<li>{{ u }}</li>{% endfor %}</ul>
+  {% else %}
+  <p class="empty">해당 없음 — 남은 미해결 항목이 없습니다.</p>
+  {% endif %}
+  {% else %}
+  {# 행이 없어도 섹션을 지우지 않는다 — 왜 없는지가 정보다 (불변식 12) #}
+  <p class="empty">설계 확정이 실패했거나 아직 실행되지 않았습니다 — 아래 "그 외 gaps"에서 이유를 확인하세요.</p>
+  {% endif %}
+</section>
+
+{# v1 대조 — 조사 전 기본틀. 차이를 문장으로 만들지 않고 같은 이름의 필드를
+   나란히 놓기만 한다. 무엇이 왜 바뀌었는지는 위의 changes_from_design이 말한다. #}
+<details>
+  <summary>설계 개요 — 조사 전 기본틀 (v1 대조)</summary>
+  {% if architecture %}
+  <p>{{ architecture.summary }}</p>
+  <table>
+    <thead><tr><th></th><th>기본틀 (조사 전)</th><th>확정 (조사 후)</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>구조</strong></td>
+        <td><pre class="prose">{{ architecture.shape }}</pre></td>
+        <td><pre class="prose">{{ final_design.shape if final_design else "—" }}</pre></td>
+      </tr>
+      <tr>
+        <td><strong>데이터 흐름</strong></td>
+        <td><pre class="prose">{{ architecture.data_flow }}</pre></td>
+        <td><pre class="prose">{{ final_design.data_flow if final_design else "—" }}</pre></td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>설계 단계에서 답하지 못한 질문</h3>
+  {% if architecture.open_questions %}
+  <ul class="plain">{% for q in architecture.open_questions %}<li>{{ q }}</li>{% endfor %}</ul>
+  {% else %}
+  <p class="empty">해당 없음 — 설계 단계에서 미해결로 남긴 질문이 없습니다.</p>
+  {% endif %}
+  {% else %}
+  <p class="empty">해당 없음 — 설계 본문이 저장되지 않았습니다.</p>
+  {% endif %}
+</details>
+
 <section>
   <h2>확정 스택</h2>
   {% if no_winner %}
@@ -167,6 +264,21 @@
   <ul class="plain">{% for a in assumptions %}<li>{{ a }}</li>{% endfor %}</ul>
   {% else %}
   <p class="empty">해당 없음 — 사용자가 모든 질문에 응답해 기본값을 쓰지 않았습니다.</p>
+  {% endif %}
+</section>
+
+{# 4번 — 권장 설계가 깔고 있는 전제. "필요 없어서"(아래 5번)와 다른 섹션이다:
+   조사를 안 한 것과 조사할 필요가 없다고 판단한 것은 다르다 (불변식 17). #}
+<section>
+  <h2>🔒 설계에서 이미 정해진 부분</h2>
+  {% if closed %}
+  <ul class="plain">
+    {% for c in closed %}
+    <li><strong>{{ c.name }}</strong> ({{ c.necessity }}) — {{ c.no_comparison_reason or c.role_in_design }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">해당 없음 — 모든 결정 지점을 비교해서 골랐습니다. (설명에 이미 정해진 전제가 없었거나, 설계가 전제를 못 찾은 것입니다.)</p>
   {% endif %}
 </section>
 

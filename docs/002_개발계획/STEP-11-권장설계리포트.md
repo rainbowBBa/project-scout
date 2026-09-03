@@ -42,25 +42,32 @@ build_order · integration_notes · combination_risks · unresolved
 
 ## 완료 기준
 
-- [ ] `report.html` 최상단이 **권장 설계**이고, 문장에 고른 후보 이름이 보인다
-- [ ] **확정 `shape`·`data_flow`가 최상단에 렌더링된다** — 이게 "수정 설계"의 본문이다
-- [ ] **"설계가 어떻게 바뀌었나"** 블록이 `changes_from_design`을 보여준다
-- [ ] `changes_from_design`이 비면 **섹션이 사라지지 않고** "조사 결과가 기본틀을
-      바꾸지 않았다"가 표시된다 (불변식 12)
-- [ ] `integration_notes` · `combination_risks` · `build_order` · `unresolved` 가
+> **상태 (2026-09-03)** — 코드 완료 · **E2E로 `report.html`까지 확인**.
+> 이 단계는 LLM을 쓰지 않으므로 모델과 무관하게 검증이 끝난다.
+
+
+- [x] `report.html` 최상단이 **권장 설계**이고, 문장에 고른 후보 이름이 보인다
+      → 실행 산출물 88KB에서 `권장 설계` 위치가 `확정 스택`보다 앞임을 확인
+- [x] **확정 `shape`·`data_flow`가 최상단에 렌더링된다** — 이게 "수정 설계"의 본문이다
+- [x] **"설계가 어떻게 바뀌었나"** 블록이 `changes_from_design`을 보여준다
+- [x] `changes_from_design`이 비면 **섹션이 사라지지 않고** "조사 결과가 기본틀을
+      바꾸지 않았다"가 표시된다 (불변식 12) — 실행에서 실제로 이 경로를 탔다
+- [x] `integration_notes` · `combination_risks` · `build_order` · `unresolved` 가
       각각 렌더링된다 (하나라도 빠지면 실패)
-- [ ] `final_designs` 행이 **없을 때 섹션이 사라지지 않는다** —
+- [x] `final_designs` 행이 **없을 때 섹션이 사라지지 않는다** —
       "설계 확정 실패 + `gaps`의 이유"가 같은 자리에 찍힌다 (불변식 12)
-- [ ] "설계 개요"가 `<details>`로 접혀 있고, 펴면 **v1의 같은 필드**(`shape` ·
+- [x] "설계 개요"가 `<details>`로 접혀 있고, 펴면 **v1의 같은 필드**(`shape` ·
       `data_flow`)와 `open_questions`가 나온다 — 확정본과 나란히 읽힌다
-- [ ] `open_questions`가 비어 있으면 "해당 없음 + 이유"가 나온다
-- [ ] "설계에서 이미 정해진 부분"에 `needs_comparison=false` 요소가
+- [x] `open_questions`가 비어 있으면 "해당 없음 + 이유"가 나온다
+- [x] "설계에서 이미 정해진 부분"에 `needs_comparison=false` 요소가
       `no_comparison_reason`과 함께 나온다
-- [ ] 그 요소들이 "지금 만들지 않아도 되는 것"에 **중복으로 나오지 않는다** —
+- [x] 그 요소들이 "지금 만들지 않아도 되는 것"에 **중복으로 나오지 않는다** —
       두 섹션의 의미가 다르다 (필요 없는 것 / 이미 정해진 것)
-- [ ] **네트워크를 끊고 열어도 레이아웃이 깨지지 않는다** (CDN 의존 0 유지)
-- [ ] `uv run pytest tests/test_report.py` 통과 — 시드 데이터로 위 항목을 검증한다
-- [ ] `report.py`에 LLM 호출이 0건이다 (`grep -n "llm\|invoke" stages/report.py`)
+- [x] **네트워크를 끊고 열어도 레이아웃이 깨지지 않는다** (CDN 의존 0 유지)
+      → 산출물에 `http://`·외부 호스트 참조 0건
+- [x] `uv run pytest tests/test_report.py` 통과 — 시드 데이터로 위 항목을 검증한다
+      → 신규 6개 포함 전체 **46개 통과**
+- [x] `report.py`에 LLM 호출이 0건이다 — `test_report.py`가 소스를 검사한다 (불변식 7)
 
 ## 막히면
 

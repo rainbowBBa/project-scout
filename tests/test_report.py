@@ -8,7 +8,15 @@ from pathlib import Path
 
 import pytest
 from scout import store
-from scout.schemas import Candidate, Component, Fact, Interview, Verdict
+from scout.schemas import (
+    Architecture,
+    Candidate,
+    Component,
+    Fact,
+    FinalDesign,
+    Interview,
+    Verdict,
+)
 from scout.stages.report import build_report_context, render_report
 
 SLUG = "test-run"
@@ -310,3 +318,138 @@ def test_empty_sections_show_reason_not_disappear(runs_dir: str):
 
     assert ctx["stack"] == []
     assert "해당 없음" in html
+
+
+# ── STEP 11 · 권장 설계 · v1 대조 · 이미 정해진 부분 ─────────────────────
+
+
+def _seed_designs(runs_dir: str) -> None:
+    """기본틀(v1)과 확정 설계(v2)를 시드한다 — 같은 이름의 필드가 대조 재료다."""
+    store.upsert_design(
+        SLUG,
+        Architecture(
+            summary="단일 Node 백엔드가 실시간 연결과 REST를 함께 처리한다.",
+            shape="브라우저 → Node(실시간+요약 워커) → PostgreSQL",
+            data_flow="전송 → DB 기록 → 룸 브로드캐스트",
+            build_order=["메시지 스키마", "실시간 전달"],
+            open_questions=["사내 SSO 프로토콜 미확인"],
+        ),
+        runs_dir=runs_dir,
+    )
+    store.upsert_final_design(
+        SLUG,
+        FinalDesign(
+            summary="socket.io로 실시간 전달을 얹고 메시지는 PostgreSQL에 저장한다.",
+            shape="브라우저 → Node(실시간) → PostgreSQL · 요약 워커 별 프로세스",
+            data_flow="전송 → DB 기록 → 룸 브로드캐스트 → 워커가 요약",
+            changes_from_design=[
+                "요약 워커를 백엔드 프로세스에서 분리했다 — socket.io 판정의 caveats"
+            ],
+            stack_rationale="세 선택이 모두 운영 컴포넌트를 늘리지 않는 제약에서 나왔다",
+            integration_notes=["룸 이름과 채널 ID를 같은 값으로 쓴다"],
+            combination_risks=["단일 프로세스 전제가 깨지면 어댑터가 필요해진다"],
+            build_order=["메시지 스키마", "socket.io 룸 전달", "요약 워커"],
+            unresolved=["인증: priority가 밀려 이번 실행에서 다루지 않음"],
+        ),
+        runs_dir=runs_dir,
+    )
+
+
+def test_final_design_is_rendered_at_the_top(runs_dir: str):
+    _seed_basic(runs_dir)
+    _seed_designs(runs_dir)
+
+    ctx = build_report_context(SLUG, runs_dir=runs_dir)
+    html = render_report(ctx)
+
+    assert ctx["final_design"] is not None
+    # 확정 설계의 본문은 구조다 — 없으면 "수정 설계 완성"이 성립하지 않는다
+    assert "요약 워커 별 프로세스" in html
+    assert "워커가 요약" in html
+    assert "요약 워커를 백엔드 프로세스에서 분리했다" in html
+    assert "룸 이름과 채널 ID를 같은 값으로 쓴다" in html
+    assert "단일 프로세스 전제가 깨지면" in html
+    assert "인증: priority가 밀려" in html
+    # 권장 설계가 확정 스택보다 먼저 나온다
+    assert html.index("권장 설계") < html.index("확정 스택")
+
+
+def test_v1_is_kept_for_contrast(runs_dir: str):
+    """designs(v1)가 덮어써지지 않아야 대조가 성립한다 — 같은 필드를 나란히 놓는다."""
+    _seed_basic(runs_dir)
+    _seed_designs(runs_dir)
+
+    ctx = build_report_context(SLUG, runs_dir=runs_dir)
+    html = render_report(ctx)
+
+    assert ctx["architecture"] is not None
+    assert ctx["architecture"].shape != ctx["final_design"].shape
+    assert "Node(실시간+요약 워커)" in html, "기본틀의 구조가 대조에 안 나온다"
+    assert "사내 SSO 프로토콜 미확인" in html
+
+
+def test_unchanged_design_says_so_instead_of_hiding(runs_dir: str):
+    """changes_from_design이 비면 지우지 않는다 — 기본틀이 조사를 견뎠다는 정보다."""
+    _seed_basic(runs_dir)
+    _seed_designs(runs_dir)
+    final = store.get_final_design(SLUG, runs_dir=runs_dir)
+    store.upsert_final_design(
+        SLUG, final.model_copy(update={"changes_from_design": []}), runs_dir=runs_dir
+    )
+
+    html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
+
+    assert "조사 결과가 기본틀을 바꾸지 않았습니다" in html
+
+
+def test_missing_final_design_shows_reason_not_blank(runs_dir: str):
+    _seed_basic(runs_dir)  # designs·final_designs 없음
+
+    ctx = build_report_context(SLUG, runs_dir=runs_dir)
+    html = render_report(ctx)
+
+    assert ctx["final_design"] is None
+    assert "권장 설계" in html, "행이 없다고 섹션을 지우면 안 된다"
+    assert "설계 확정이 실패했거나" in html
+    assert "설계 본문이 저장되지 않았습니다" in html
+
+
+def test_closed_decisions_are_separate_from_deferred(runs_dir: str):
+    """"필요 없어서"와 "이미 정해져서"는 다른 섹션이다 (불변식 17)."""
+    _seed_basic(runs_dir)
+    components = store.get_components(SLUG, runs_dir=runs_dir)
+    components.append(
+        Component(
+            name="서버 런타임·언어",
+            kind="infrastructure",
+            role_in_design="실행 환경",
+            decision_question="런타임은 무엇인가",
+            needs_comparison=False,
+            no_comparison_reason="3인 TypeScript 팀 — 이미 닫힌 결정",
+            necessity="essential",
+            necessity_reason="없으면 실행이 안 된다",
+            priority=2,
+            approach_notes="",
+        )
+    )
+    store.upsert_components(SLUG, components, runs_dir=runs_dir)
+
+    ctx = build_report_context(SLUG, runs_dir=runs_dir)
+    html = render_report(ctx)
+
+    assert [c.name for c in ctx["closed"]] == ["서버 런타임·언어"]
+    assert "3인 TypeScript 팀 — 이미 닫힌 결정" in html
+    # 닫힌 결정은 "지금 만들지 않아도 되는 것"에 중복으로 나오지 않는다
+    assert all(c.name != "서버 런타임·언어" for c in ctx["deferred"])
+    # search로 넘기는 집합에서도 빠진다
+    assert "서버 런타임·언어" not in [c.name for c in ctx["skipped"]]
+
+
+def test_report_uses_no_llm(runs_dir: str):
+    """불변식 7 — 이 단계에서 새 주장이 생길 수 없다."""
+    source = Path("packages/scout/src/scout/stages/report.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "invoke" not in source
+    assert "make_llm" not in source

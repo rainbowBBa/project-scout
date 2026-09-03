@@ -368,9 +368,16 @@ def _maybe_print_next_stage_banner(node_name: str) -> None:
 
 
 def _print_pipeline_footer(
-    slug: str, *, stopped_early: bool, report_path: str | None
+    slug: str,
+    *,
+    stopped_early: bool,
+    report_path: str | None,
+    cache: SqliteLLMCache | None = None,
 ) -> None:
     typer.echo(f"\n[OK] slug={slug}")
+    # 캐시가 실제로 먹었는지 안 찍으면 "왜 결과가 안 바뀌지"에서 시간을 잃는다.
+    if cache is not None:
+        typer.echo(f"[개발] {cache.summary()}")
     if report_path is not None:
         typer.echo(f"리포트: {report_path}")
     elif stopped_early:

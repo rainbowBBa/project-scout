@@ -47,6 +47,10 @@ def build_report_context(slug: str, *, runs_dir: str | None = None) -> dict:
     picks = store.get_picks(slug, runs_dir=runs_dir)
     violations = store.get_grounding_violations(slug, runs_dir=runs_dir)
     all_gaps = store.get_all_gaps(slug, runs_dir=runs_dir)
+    # 설계 두 버전 — designs(v1, 조사 전)와 final_designs(v2, 확정).
+    # 같은 이름의 shape·data_flow를 나란히 놓는 것이 곧 대조표다 (03-저장.md).
+    architecture = store.get_design(slug, runs_dir=runs_dir)
+    final_design = store.get_final_design(slug, runs_dir=runs_dir)
 
     candidate_by_key = {(c.component, c.name): c for c in candidates}
     verdict_by_name = {v.candidate: v for v in verdicts}
@@ -60,7 +64,11 @@ def build_report_context(slug: str, *, runs_dir: str | None = None) -> dict:
         picks_by_component[p["component"]].append(p)
 
     covered = set(picks_by_component)
-    passing_names = {c.name for c in components if c.necessity in _PASSING_NECESSITY}
+    passing_names = {
+        c.name
+        for c in components
+        if c.necessity in _PASSING_NECESSITY and c.needs_comparison
+    }
 
     stack: list[dict] = []
     no_winner: list[str] = []
@@ -120,6 +128,13 @@ def build_report_context(slug: str, *, runs_dir: str | None = None) -> dict:
             no_winner.append(component.name)
 
     deferred = [c for c in components if c.necessity in _DEFERRED_NECESSITY]
+    # "필요 없어서"와 "이미 정해져서"는 다른 섹션이다 — 합치면 사용자가 설계의
+    # 전제를 못 본다 (5-report.md 4번 · 불변식 17).
+    closed = [
+        c
+        for c in components
+        if not c.needs_comparison and c.necessity not in _DEFERRED_NECESSITY
+    ]
     skipped = [
         c for c in components if c.name in passing_names and c.name not in covered
     ]
@@ -169,6 +184,9 @@ def build_report_context(slug: str, *, runs_dir: str | None = None) -> dict:
     return {
         "slug": slug,
         "description": run.get("description", ""),
+        "architecture": architecture,
+        "final_design": final_design,
+        "closed": closed,
         "refined_brief": interview.get("refined_brief", ""),
         "assumptions": interview.get("assumptions") or [],
         "stack": stack,

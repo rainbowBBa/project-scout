@@ -95,37 +95,39 @@ Day 2
 [x] STEP 08  report      브라우저에서 열리는 report.html
 
 Day 3 — analyze → design 재설계 (001 CHANGELOG v20~v22)
-[~] STEP 09  design      코드 완료 fecef01 · approval/agentkit 추출 · designs 테이블
-                          pytest 34 · ruff 통과 · search_hints 영어 어휘 확인(응답 원본)
-[~] STEP 10  설계확정     코드 완료 5b55985 · 구조·저장·실패 경로 확인
-                          final_designs 내용 품질은 미확인
-[ ] STEP 11  리포트       최상단 권장 설계 + "설계에서 이미 정해진 부분"
+[~] STEP 09  design      코드 완료 fecef01 · E2E 완주 · Architecture·search_hints(영어)·
+                          constraints·needs_comparison 확인 · necessity 걸러내기만 미확인
+[~] STEP 10  설계확정     코드 완료 5b55985 · E2E 완주 · final_designs 1행 · v1≠v2 대조 성립
+                          integration_notes·combination_risks 확인 · changes_from_design 미확인
+[x] STEP 11  리포트       최상단 권장 설계 · v1↔v2 대조 · "이미 정해진 부분" · CDN 0
 [ ] STEP 12  검증        테스트 6종 + E2E 완주 (새 slug)
 [ ] STEP 13  선택        여유 있으면 osv · --from 실제 건너뛰기
 
-[~] = 코드는 완료·커밋되고 LLM 없는 검증은 통과했으나,
-      LLM 출력이 필요한 완료 기준이 남아 있다
+[~] = 배선은 E2E로 확인됐고 **판단 품질만** 남았다 — 아래 참고
 ```
 
-### STEP 09·10이 `[~]`인 이유 — E2E가 `design`에서 막혀 있다
+### STEP 09·10이 `[~]`인 이유 — 판단 품질은 정본 모델에서 본다
 
-`Design` 구조화 출력이 파싱되지 않는다. 프롬프트 문제가 아니고 **모델이 한 응답을 두
-`tool_use` 블록으로 쪼개 보내기** 때문이다 (캐시된 응답 4건을 실측).
+E2E는 완주한다(`report.html`까지). 남은 것은 **작은 모델로는 확인할 수 없는 항목**이다.
 
-```
-tool_calls=2  [0] keys=['architecture']   [1] keys=['components'] (10~11개)
-              → 각각은 검증 실패(필드 누락), 합치면 완전하다
-```
+지금 `SCOUT_MODEL_ID`가 Bedrock 일일 토큰 쿼터 때문에 임시로 Haiku이고, 정본은
+Sonnet이다. 거기서 실측된 흔들림이 셋인데 성격이 다르다.
 
-`with_structured_output`의 파서는 `first_tool_only=True`라 블록 0만 보고
-`components Field required`로 실패한다. `stop=tool_use`이므로 **출력 절단이 아니다.**
+| 증상 | 성격 | 처리 |
+|---|---|---|
+| 한 객체를 `tool_use` 두 블록으로 쪼갬 | 형식 | `llm.py` `_salvage`가 병합해 흡수 (`a32745a`) |
+| 리스트 자리에 의사 XML 문자열 | 형식 | `schemas.py` `StrList`가 태그 경계로 쪼갠다 |
+| `necessity`/`needs_comparison` 혼동 · `changes_from_design` 누락 | **판단** | **흡수하지 않는다** — `gaps`에 기록하고 Sonnet에서 다시 본다 |
 
-`llm.py`의 `_salvage`가 각 블록을 따로 훑는 것까지는 했고(진단용 `parsing_error`도
-붙였다), **블록들의 args를 합쳐서 검증하는 것**이 남았다. 4건 중 3건이 두 블록을
-모두 갖고 있어 병합이면 통과한다.
+형식은 흡수한다 — 흔들림 하나가 후보를 통째로 탈락시켜 조사 결과를 지우기 때문이다.
+판단은 흡수하지 않는다 — 프롬프트를 작은 모델에 맞춰 휘면 `necessity`의 이중 축(이
+도구의 차별점)이 모델에 종속되고, 정본 모델로 돌아왔을 때 그 왜곡이 남는다.
+자세한 구분은 [08-설정](../001_기술스택-조사-에이전트-설계/08-설정.md)
+"SCOUT_MODEL_ID".
 
-이 수정이 들어가면 STEP 09·10의 남은 완료 기준을 한 번의 E2E로 함께 확인할 수 있다 —
-`SCOUT_LLM_CACHE=1`이면 앞 단계는 캐시에서 나오므로 거의 무료다.
+**쿼터가 회복되면 Sonnet으로 한 번 돌려** STEP 09·10의 남은 항목과 STEP 12의 육안
+확인을 함께 본다 — `SCOUT_LLM_CACHE`는 모델이 바뀌면 키가 갈리므로 캐시가 새로 채워진다.
+
 
 ---
 
