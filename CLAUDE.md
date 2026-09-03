@@ -56,6 +56,7 @@ interview → design → search → verify → evaluate → report
 | 점수 공식 | `scout/rubric.py` |
 | 인용 검증 | `scout/grounding.py` |
 | 웹검색 승인 게이트 | `scout/approval.py` (`design`·`search` 공용) |
+| 개발용 LLM 캐시 | `scout/llm_cache.py` (기본 off — `SCOUT_LLM_CACHE=1`) |
 | 에이전트 기록 파싱 | `scout/agentkit.py` (`design`·`search` 공용) |
 | 인터넷 호출 | `packages/scout-net-mcp/src/scout_net_mcp/providers/<소스>.py` |
 | HTML 템플릿 | `scout/templates/report.html.j2` |
@@ -278,6 +279,27 @@ uv run scout run "..."            # 개발용: 설명을 인자로 직접 넘긴
 uv run scout run "..." --stop-after design --auto-approve-search
 uv run scout show <slug> design
 ```
+
+### ★ 개발 프로파일 — 호출 40회 → 8~10회, 반복은 0회
+
+LLM 호출이 기본값에서 한 번에 약 40회다(`search`가 절반). 개발 중에는 규모를 줄이고
+캐시를 켠다 — **코드를 고치지 않는다.**
+
+```bash
+# .env
+SCOUT_INTERVIEW_MAX_TURNS=2       # interview 6 → 3
+SCOUT_LLM_CACHE=1                 # 2회차부터 Bedrock 호출 0
+
+uv run scout run "..." --max-components 1 --max-candidates 2 --auto-approve-search
+#   search 21 → 7 · verify 9 → 2 · evaluate 3 → 1
+uv run scout run "..." --stop-after design    # 뒤 단계 0
+```
+
+캐시 키가 프롬프트 문자열이라 **프롬프트를 고치면 그 단계만 자동으로 미스**가 된다.
+실행 끝에 `캐시 적중 N / 미스 M`이 찍힌다.
+
+**판단 품질을 볼 때는 캐시를 끈다** — 같은 프롬프트+입력이면 비결정성이 사라져
+judge의 편차를 못 본다 ([08-설정](docs/001_기술스택-조사-에이전트-설계/08-설정.md)).
 
 **`--from`은 아직 값만 검증하고 실제로 앞 단계를 건너뛰지 않는다** — 재개는 전적으로
 `SqliteSaver` 체크포인터가 한다. 그래서 프롬프트만 고쳐서 한 단계를 다시 돌리는 건 지금

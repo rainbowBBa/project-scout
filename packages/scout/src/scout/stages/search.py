@@ -22,10 +22,15 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from langchain.agents import create_agent
-from langchain_core.messages import HumanMessage
 
 from scout import store
-from scout.agentkit import ToolCall, build_transcript, collect_tool_calls, parse_payload
+from scout.agentkit import (
+    ToolCall,
+    build_transcript,
+    collect_tool_calls,
+    parse_payload,
+    run_agent_loop,
+)
 from scout.approval import SearchGate, default_approve, wrap_web_search
 from scout.llm import invoke_structured
 from scout.mcp_client import make_mcp_client
@@ -44,11 +49,11 @@ if TYPE_CHECKING:
     from langchain_core.tools import BaseTool
 
     from scout.approval import Approve
+    from scout.config import Settings
     from scout.schemas import Component, Interview
     from scout.state import ScoutState
 
 _MAX_WEB_FACTS = 6
-_RECURSION_LIMIT = 40
 
 
 # ── ToolMessage → Fact ───────────────────────────────────────────────────
@@ -238,14 +243,20 @@ async def _search_component(
     tools: dict[str, BaseTool],
     gate: SearchGate,
     max_candidates: int,
-) -> list[Candidate]:
+    settings: Settings,
+) -> tuple[list[Candidate], bool]:
     now = datetime.now(UTC).isoformat()
     # 웹검색 예산은 요소마다 따로 준다 — 한 요소가 전체 예산을 다 먹으면 안 된다.
     if "web_search" in tools:
-        tools = {**tools, "web_search": wrap_web_search(tools["web_search"], gate)}
+        tools = {
+            **tools,
+            "web_search": wrap_web_search(
+                tools["web_search"], gate, budget=settings.scout_search_web_searches
+            ),
+        }
 
     # checkpointer=False — 안 주면 바깥 그래프의 SqliteSaver(동기 전용)를 물려받는데
-    # 이 에이전트는 ainvoke로 돈다 ("SqliteSaver does not support async methods").
+    # 이 에이전트는 astream으로 돈다 ("SqliteSaver does not support async methods").
     agent = create_agent(
         llm,
         list(tools.values()),
@@ -263,13 +274,11 @@ async def _search_component(
         refined_brief=interview.refined_brief,
     )
 
-    # recursion_limit을 반드시 넘긴다 — create_agent는 그래프에 9999를 바인딩해둔다.
-    # 안 넘기면 툴 루프가 사실상 무제한으로 돈다.
-    result = await agent.ainvoke(
-        {"messages": [HumanMessage(task)]},
-        config={"recursion_limit": _RECURSION_LIMIT},
+    # 한도에 걸려도 죽지 않는다 — 부분 기록으로 후보를 뽑는다. topup_dossier가 kind별
+    # 필수 사실을 코드로 채우므로 탐색이 짧아도 dossier가 비지 않는다 (불변식 11).
+    messages, truncated = await run_agent_loop(
+        agent, task, settings.scout_search_recursion_limit
     )
-    messages = result["messages"]
     calls = collect_tool_calls(messages)
 
     parsed, raw = invoke_structured(
@@ -298,7 +307,7 @@ async def _search_component(
                 dossier_gaps=gaps,
             )
         )
-    return candidates
+    return candidates, truncated
 
 
 async def _run_search(
@@ -307,18 +316,18 @@ async def _run_search(
     llm: ChatBedrockConverse,
     gate: SearchGate,
     max_candidates: int,
-    concurrency: int,
+    settings: Settings,
 ) -> tuple[list[Candidate], list[str]]:
     tools_list = await make_mcp_client().get_tools()
     tools = {t.name: t for t in tools_list}
 
-    semaphore = asyncio.Semaphore(concurrency)
+    semaphore = asyncio.Semaphore(settings.scout_mcp_concurrency)
     gaps: list[str] = []
 
-    async def one(component: Component) -> list[Candidate]:
+    async def one(component: Component) -> tuple[list[Candidate], bool]:
         async with semaphore:
             return await _search_component(
-                component, interview, llm, tools, gate, max_candidates
+                component, interview, llm, tools, gate, max_candidates, settings
             )
 
     results = await asyncio.gather(
@@ -331,7 +340,14 @@ async def _run_search(
             # 요소 하나가 죽어도 나머지는 계속 간다 (불변식 11)
             gaps.append(f"'{component.name}' 조사 실패: {result}")
             continue
-        candidates.extend(result)
+        found, truncated = result
+        if truncated:
+            gaps.append(
+                f"'{component.name}': 툴 탐색이 한도"
+                f"({settings.scout_search_recursion_limit} superstep)에 걸려 중단됨 — "
+                "여기까지 모은 기록으로 후보를 뽑았다"
+            )
+        candidates.extend(found)
     return candidates, gaps
 
 
@@ -358,7 +374,7 @@ def search_node(
             llm,
             gate,
             state.get("max_candidates", settings.scout_max_candidates),
-            settings.scout_mcp_concurrency,
+            settings,
         )
     )
 

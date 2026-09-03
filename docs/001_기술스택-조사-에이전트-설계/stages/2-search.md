@@ -135,7 +135,8 @@ gaps가 핵심 항목을 포함하면 judge는 `confidence: low`를 내야 한�
   ReAct 루프   agent ⇄ tools
                npm_search · npm_package · pypi_package
                github_repo_health · web_search(승인 게이트)
-               → recursion_limit 40으로 상한 (superstep 수 — 툴 호출 ~20회)
+               → recursion_limit 16으로 상한 (superstep 수 — 툴 호출 ~8회)
+                 한도에 걸려도 부분 기록으로 후보를 뽑는다 (agentkit.run_agent_loop)
 
   코드         ToolMessage 원본에서 Fact 추출 (LLM 개입 없음)
   LLM          후보 정리 · 중복 제거 (구조화 출력)
@@ -173,7 +174,7 @@ npm_package·github_repo_health로 사실을 모으고, 웹검색으로 method �
 | 요소 fan-out | `search` 노드 내부의 `asyncio.gather` |
 | MCP 호출 | `Semaphore(SCOUT_MCP_CONCURRENCY)` |
 | MCP 서버 | 자체 토큰버킷 레이트리미터 (이중 방어) |
-| 요소당 웹검색 | **5회** (승인 프롬프트 폭주 방지) |
+| 요소당 웹검색 | **5회** (승인 프롬프트 폭주 방지, `SCOUT_SEARCH_WEB_SEARCHES`) |
 
 **`Send` fan-out을 쓰지 않는다.** `Send`를 쓰면 한 superstep에 여러 노드 키가 올라오는데
 `cli.py`의 스트림 루프는 `next(iter(update.items()))`로 첫 키만 읽고, 서브노드 이름에서
@@ -182,10 +183,17 @@ npm_package·github_repo_health로 사실을 모으고, 웹검색으로 method �
 그때 스트림 루프를 함께 고친다.
 
 `create_agent`는 `checkpointer=False`로 컴파일한다 — 안 주면 바깥 그래프의
-`SqliteSaver`(동기 전용)를 물려받는데 이 에이전트는 `ainvoke`로 돈다.
+`SqliteSaver`(동기 전용)를 물려받는데 이 에이전트는 `astream`으로 돈다.
 
 `recursion_limit`도 호출할 때마다 넘긴다 — `create_agent`는 그래프에 **9999**를
-바인딩해두기 때문에, 안 넘기면 툴 루프가 사실상 무제한으로 돈다.
+바인딩해두기 때문에, 안 넘기면 툴 루프가 사실상 무제한으로 돈다
+(`SCOUT_SEARCH_RECURSION_LIMIT`, 기본 16).
+
+**한도에 걸려도 그 요소가 죽지 않는다.** `ainvoke`는 `GraphRecursionError`에 상태를
+담아주지 않아 모은 툴 기록이 함께 날아가고 후보가 0개가 된다. `agentkit.run_agent_loop`가
+`astream`으로 마지막 상태를 들고 있어 **부분 기록으로 후보를 뽑고** 한도 초과를
+`gaps`에 남긴다. `topup_dossier`가 kind별 필수 사실을 코드로 채우므로 탐색이 짧아도
+dossier가 비지 않는다.
 
 MCP 서버의 디스크 캐시(24h)가 있어서 재실행 시 HTTP는 대부분 캐시에서 나온다.
 

@@ -171,7 +171,7 @@ LLM은 눈에 보이는 기능만 나열하고 배포·운영·인증을 잊는 
 
 ```python
 agent = create_agent(llm, tools, system_prompt=DESIGN_AGENT_SYSTEM_PROMPT, checkpointer=False)
-messages, truncated = await explore(agent, task)   # 내부에서 astream · recursion_limit 10
+messages, truncated = await run_agent_loop(agent, task, limit)   # agentkit · astream
 ```
 
 에이전트가 툴을 부르며 설계를 세운다. 무엇을 확인하는가:
@@ -186,7 +186,8 @@ messages, truncated = await explore(agent, task)   # 내부에서 astream · rec
 #### 툴 루프 상한 — `recursion_limit` 10, 그리고 걸려도 죽지 않는다
 
 `recursion_limit`은 **툴 호출 수가 아니라 superstep 수**다. ReAct는 한 바퀴가
-model + tools 두 스텝이라 **10이면 툴 호출 4~5회**쯤이다. 설계는 후보 이름·어휘만
+model + tools 두 스텝이라 **10이면 툴 호출 4~5회**쯤이다
+(`SCOUT_DESIGN_RECURSION_LIMIT`). 설계는 후보 이름·어휘만
 확인하면 되므로 프로토타입에서는 그 정도로 충분하고, 루프를 오래 돌면 누적 입력이
 토큰을 그대로 먹는다.
 
@@ -256,7 +257,7 @@ design이 npm_package 를 부른다 → 그 값을 facts 에 넣는다
 | 모듈 | 담는 것 |
 |---|---|
 | `scout/approval.py` | `Approval` · `Approve` · `NonInteractive` · `default_approve` · `auto_approve` · `SearchGate` · `wrap_web_search` |
-| `scout/agentkit.py` | `ToolCall` · `message_text` · `parse_payload` · `collect_tool_calls` · `build_transcript` |
+| `scout/agentkit.py` | `ToolCall` · `message_text` · `parse_payload` · `collect_tool_calls` · `build_transcript` · **`run_agent_loop`** |
 
 ---
 

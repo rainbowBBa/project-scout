@@ -20,11 +20,9 @@ import asyncio
 from typing import TYPE_CHECKING
 
 from langchain.agents import create_agent
-from langchain_core.messages import HumanMessage
-from langgraph.errors import GraphRecursionError
 
 from scout import store
-from scout.agentkit import build_transcript, collect_tool_calls
+from scout.agentkit import build_transcript, collect_tool_calls, run_agent_loop
 from scout.approval import SearchGate, default_approve, wrap_web_search
 from scout.llm import invoke_structured
 from scout.mcp_client import make_mcp_client
@@ -41,16 +39,9 @@ if TYPE_CHECKING:
     from langchain_core.tools import BaseTool
 
     from scout.approval import Approve
+    from scout.config import Settings
     from scout.schemas import Component, Interview
     from scout.state import ScoutState
-
-# LangGraph의 recursion_limit은 **툴 호출 수가 아니라 superstep 수**다. ReAct는 한 바퀴가
-# model + tools 두 스텝이라 10이면 툴 호출 4~5회쯤이다. 프로토타입에서는 그 정도로 충분하다 —
-# 설계는 후보 이름·어휘만 확인하면 되고, 루프를 오래 돌면 누적 입력이 토큰을 그대로 먹는다.
-_RECURSION_LIMIT = 10
-# 설계는 요소별로 펼치지 않고 한 번 돌므로 예산이 실행 전체 기준이다
-# (`search`는 결정 지점당 5회).
-_WEB_SEARCH_BUDGET = 3
 
 _PASSING_NECESSITY = {"essential", "valuable"}
 
@@ -62,32 +53,11 @@ def _prompt_input(interview: Interview) -> dict[str, str]:
     }
 
 
-async def explore(agent, task: str) -> tuple[list, bool]:
-    """툴 루프를 돌리고 (메시지, 한도에 걸렸는지)를 돌려준다.
-
-    `ainvoke`가 아니라 `astream`을 쓰는 이유는 **한도 초과가 예외이기 때문**이다 —
-    `GraphRecursionError`는 상태를 담아주지 않아서 `ainvoke`로 받으면 그때까지 모은
-    툴 기록이 함께 날아간다. 한도를 낮춘 만큼 걸릴 일이 실제로 생기고, 그때 부분
-    기록만으로도 설계를 뽑는 게 아무것도 없이 죽는 것보다 낫다 (불변식 11).
-    """
-    messages: list = []
-    try:
-        # recursion_limit을 반드시 넘긴다 — create_agent는 그래프에 9999를 바인딩해둔다.
-        async for state in agent.astream(
-            {"messages": [HumanMessage(task)]},
-            config={"recursion_limit": _RECURSION_LIMIT},
-            stream_mode="values",
-        ):
-            messages = state["messages"]
-    except GraphRecursionError:
-        return messages, True
-    return messages, False
-
-
 async def run_design(
     llm: ChatBedrockConverse,
     interview: Interview,
     tools: dict[str, BaseTool],
+    recursion_limit: int,
 ) -> tuple[Design, bool]:
     # checkpointer=False — 안 주면 바깥 그래프의 SqliteSaver(동기 전용)를 물려받는데
     # 이 에이전트는 astream으로 돈다 ("SqliteSaver does not support async methods").
@@ -98,8 +68,8 @@ async def run_design(
         checkpointer=False,
     )
     prompt_input = _prompt_input(interview)
-    messages, truncated = await explore(
-        agent, DESIGN_AGENT_TASK_PROMPT.format(**prompt_input)
+    messages, truncated = await run_agent_loop(
+        agent, DESIGN_AGENT_TASK_PROMPT.format(**prompt_input), recursion_limit
     )
 
     design, raw = invoke_structured(
@@ -162,17 +132,22 @@ def _record_gaps(slug: str, design: Design, selected: list[Component]) -> None:
 
 
 async def _run(
-    interview: Interview, llm: ChatBedrockConverse, gate: SearchGate
+    interview: Interview,
+    llm: ChatBedrockConverse,
+    gate: SearchGate,
+    settings: Settings,
 ) -> tuple[Design, bool]:
     tools = {t.name: t for t in await make_mcp_client().get_tools()}
     if "web_search" in tools:
         tools = {
             **tools,
             "web_search": wrap_web_search(
-                tools["web_search"], gate, budget=_WEB_SEARCH_BUDGET
+                tools["web_search"], gate, budget=settings.scout_design_web_searches
             ),
         }
-    return await run_design(llm, interview, tools)
+    return await run_design(
+        llm, interview, tools, settings.scout_design_recursion_limit
+    )
 
 
 def design_node(
@@ -181,11 +156,14 @@ def design_node(
     llm: ChatBedrockConverse,
     approve: Approve = default_approve,
 ) -> dict:
+    from scout.config import Settings
+
     slug = state["slug"]
+    settings = Settings()
     # 게이트는 이 노드에서 새로 만든다 — search_node와 공유하면 SearchGate._lock이
     # 다른 이벤트 루프에 묶인다 (두 노드가 각각 asyncio.run으로 루프를 연다).
     gate = SearchGate(approve=approve)
-    design, truncated = asyncio.run(_run(state["interview"], llm, gate))
+    design, truncated = asyncio.run(_run(state["interview"], llm, gate, settings))
 
     store.upsert_design(slug, design.architecture)
     store.upsert_components(slug, design.components)
@@ -198,7 +176,8 @@ def design_node(
         store.add_gap(
             slug,
             "design",
-            f"툴 탐색이 한도({_RECURSION_LIMIT} superstep)에 걸려 중단됨 — "
+            f"툴 탐색이 한도({settings.scout_design_recursion_limit} superstep)에 "
+            "걸려 중단됨 — "
             "여기까지 모은 기록으로 설계를 뽑았다",
         )
     for note in gate.notes:

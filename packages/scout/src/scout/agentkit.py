@@ -13,7 +13,8 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langgraph.errors import GraphRecursionError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -21,6 +22,31 @@ if TYPE_CHECKING:
     from langchain_core.messages import BaseMessage
 
 _TOOL_PAYLOAD_CHARS = 1200
+
+
+async def run_agent_loop(agent, task: str, limit: int) -> tuple[list, bool]:
+    """툴 루프를 돌리고 (메시지, 한도에 걸렸는지)를 돌려준다.
+
+    `ainvoke`가 아니라 `astream`을 쓰는 이유는 **한도 초과가 예외이기 때문**이다 —
+    `GraphRecursionError`는 상태를 담아주지 않아서 `ainvoke`로 받으면 그때까지 모은
+    툴 기록이 함께 날아간다. 한도를 낮춘 만큼 걸릴 일이 실제로 생기고, 그때 부분
+    기록만으로도 결과를 뽑는 게 아무것도 없이 죽는 것보다 낫다 (불변식 11).
+
+    `limit`은 **툴 호출 수가 아니라 superstep 수**다. ReAct는 한 바퀴가 model + tools
+    두 스텝이라 10이면 툴 호출 4~5회쯤이다. `create_agent`는 그래프에 9999를 바인딩해
+    두므로 호출할 때마다 반드시 넘긴다.
+    """
+    messages: list = []
+    try:
+        async for state in agent.astream(
+            {"messages": [HumanMessage(task)]},
+            config={"recursion_limit": limit},
+            stream_mode="values",
+        ):
+            messages = state["messages"]
+    except GraphRecursionError:
+        return messages, True
+    return messages, False
 
 
 @dataclass

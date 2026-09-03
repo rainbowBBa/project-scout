@@ -10,6 +10,7 @@ import boto3
 import typer
 from dotenv import load_dotenv
 from langchain_aws import __version__ as langchain_aws_version
+from langchain_core.globals import set_llm_cache
 from langgraph.checkpoint.sqlite import SqliteSaver
 from pydantic import ValidationError
 
@@ -18,6 +19,7 @@ from scout.approval import auto_approve, default_approve
 from scout.config import Settings
 from scout.graph import build_graph, make_slug
 from scout.llm import make_llm
+from scout.llm_cache import SqliteLLMCache
 from scout.mcp_client import make_mcp_client
 
 app = typer.Typer()
@@ -205,6 +207,14 @@ def _run_pipeline(
     if max_candidates is not None:
         settings.scout_max_candidates = max_candidates
 
+    # 개발용 LLM 응답 캐시. 기본 off — 켜진 채 실전 실행이 돌면 어제의 판정이
+    # 오늘의 추천으로 나온다. doctor에는 걸지 않는다 (실측이 목적인 명령이다).
+    cache = None
+    if settings.scout_llm_cache:
+        cache = SqliteLLMCache(settings.scout_llm_cache_path)
+        set_llm_cache(cache)
+        typer.echo(f"[개발] LLM 캐시 사용: {settings.scout_llm_cache_path}")
+
     if description is None:
         description = typer.prompt("프로젝트 설명 입력")
 
@@ -243,7 +253,9 @@ def _run_pipeline(
                 break
             _maybe_print_next_stage_banner(node_name)
 
-    _print_pipeline_footer(slug, stopped_early=stopped_early, report_path=report_path)
+    _print_pipeline_footer(
+        slug, stopped_early=stopped_early, report_path=report_path, cache=cache
+    )
 
 
 def _print_stage_summary(node_name: str, node_output: dict) -> None:
