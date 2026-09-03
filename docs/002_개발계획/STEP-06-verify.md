@@ -8,15 +8,17 @@
 ## 만들 것
 - `scout/stages/verify.py` — judge 프롬프트 + 앵커 루브릭
 - `scout/grounding.py` — `citations LEFT JOIN facts` 검증 (LLM 없음)
-- `scout/graph.py` — `Send` fan-out (후보별)
+- `scout/graph.py` — `verify` 노드 (fan-out은 노드 내부 `asyncio.gather`, v17 참고)
 - `tests/test_grounding.py`
 
 ## 완료 기준
-- [ ] `verdicts` 8~10행 + `citations` 가 채워진다
-- [ ] **`test_grounding.py` 통과** — dossier에 없는 id를 인용한 `Verdict`를 주입하면 잡히고 `confidence`가 강등된다
+- [x] `verdicts` 8~10행 + `citations` 가 채워진다 — 배선 완료, 행 수는 실행으로 확인
+- [x] **`test_grounding.py` 통과** — dossier에 없는 id를 인용한 `Verdict`를 주입하면 잡히고 `confidence`가 강등된다
 - [ ] 아카이브 패키지를 주입하면 `solves_it=false`가 나오고 이유에 릴리스 사실이 인용된다
-- [ ] `citations`가 빈 판정은 `confidence`가 강등된다
+      — 앵커 루브릭에 박았으나 **실제 판정으로는 미확인** (Bedrock 실행 필요)
+- [x] `citations`가 빈 판정은 `confidence`가 강등된다
 - [ ] `gaps`가 많은 `method` 후보는 `confidence: low`가 나온다
+      — 앵커 루브릭에 박았으나 **실제 판정으로는 미확인** (Bedrock 실행 필요)
 
 ## 막히면
 judge가 거의 전부 `solves_it=true`를 주면 앵커 루브릭이 약한 것 — false 조건을 더 구체적으로.

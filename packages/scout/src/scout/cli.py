@@ -24,7 +24,7 @@ app = typer.Typer()
 
 # 파이프라인 6단계 전체 이름. 아직 구현된 노드만 IMPLEMENTED_STAGES에 있다 — STEP이 끝날 때마다 하나씩 늘어난다.
 STAGE_ORDER = ["interview", "analyze", "search", "verify", "evaluate", "report"]
-IMPLEMENTED_STAGES = ["interview", "analyze", "search"]
+IMPLEMENTED_STAGES = ["interview", "analyze", "search", "verify"]
 STAGE_LABELS = {
     "interview": "인터뷰",
     "analyze": "분석",
@@ -279,6 +279,22 @@ def _print_stage_summary(node_name: str, node_output: dict) -> None:
             typer.echo(f"      사실 {len(c.dossier)}개: {fact_ids}")
             for gap in c.dossier_gaps:
                 typer.echo(f"      gap: {gap}")
+    elif node_name == "verify":
+        verdicts = node_output["verdicts"]
+        solved = sum(1 for v in verdicts if v.solves_it)
+        typer.echo(
+            f"  판정 {len(verdicts)}개 — 해결 {solved} / 미해결 {len(verdicts) - solved} "
+            "(전문은 `scout show <slug> verify`)"
+        )
+        for v in verdicts:
+            mark = "O" if v.solves_it else "X"
+            typer.echo(
+                f"    [{mark}] {v.candidate} — confidence {v.confidence} "
+                f"(인용 {len(v.citations)}건)"
+            )
+            typer.echo(f"      이유: {v.solves_reason}")
+            for claim in v.unsupported_claims:
+                typer.echo(f"      근거없음: {claim}")
 
 
 def _maybe_print_next_stage_banner(node_name: str) -> None:

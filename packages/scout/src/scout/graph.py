@@ -1,4 +1,4 @@
-"""StateGraph 골격. 노드는 단계마다 하나씩 늘어난다 — 지금은 interview뿐이다.
+"""StateGraph 골격. 노드는 단계마다 하나씩 늘어난다 — 지금은 verify까지다.
 
 thread_id = slug 로 SqliteSaver 체크포인터를 물려서, 같은 slug로 다시 실행하면
 LangGraph가 끝난 노드를 건너뛰고 이어서 돈다 (02-파이프라인.md "재개").
@@ -15,6 +15,7 @@ from langgraph.graph import END, START, StateGraph
 from scout.stages import analyze as analyze_stage
 from scout.stages import interview as interview_stage
 from scout.stages import search as search_stage
+from scout.stages import verify as verify_stage
 from scout.state import ScoutState
 
 if TYPE_CHECKING:
@@ -39,10 +40,12 @@ def build_graph(
         "search",
         lambda state: search_stage.search_node(state, llm=llm, approve=approve),
     )
+    graph.add_node("verify", lambda state: verify_stage.verify_node(state, llm=llm))
     graph.add_edge(START, "interview")
     graph.add_edge("interview", "analyze")
     graph.add_edge("analyze", "search")
-    graph.add_edge("search", END)
+    graph.add_edge("search", "verify")
+    graph.add_edge("verify", END)
     return graph.compile(checkpointer=checkpointer)
 
 

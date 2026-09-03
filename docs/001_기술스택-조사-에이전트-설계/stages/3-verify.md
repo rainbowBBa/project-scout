@@ -154,8 +154,9 @@ citations (slug, candidate, fact_id)
 | 상황 | 동작 |
 |---|---|
 | grounding 위반 1차 | 위반 목록을 넣어 1회 재판정 |
-| grounding 위반 2차 | `confidence: low` 강등 + `grounding_violations` 카운트 기록 |
-| `citations` 비어 있음 | `confidence` 강등 |
+| grounding 위반 2차 | `confidence: low` 강등 + `grounding_violations` 카운트 기록. 위반 인용은 `citations`에서 걷어내 `unsupported_claims`로 옮긴다 — DB에는 dossier 안의 인용만 남기되, 무엇을 지어냈는지는 기록으로 남는다 |
+| `citations` 비어 있음 | `confidence` 한 단계 강등 |
+| judge가 후보명·요소명을 바꿔 씀 | 코드가 덮어쓴다 — 이름이 어긋나면 `verdicts` 행이 `candidates`·`facts`와 조인되지 않아 grounding 대조 자체가 무력해진다 |
 | 구조화 출력 파싱 실패 | `include_raw=True`로 원본 확보 후 1회 재시도. `Verdict`는 필드가 많아 여기가 가장 위험한 지점이다 |
 | Bedrock 스로틀링 (429) | SDK 재시도 + `Semaphore` 축소 |
 | 후보 하나의 판정이 끝내 실패 | 그 후보를 `solves_it=false`, `confidence=low`, 이유 "판정 실패"로 기록하고 계속 |

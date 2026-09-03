@@ -232,3 +232,95 @@ SEARCH_EXTRACT_RETRY_HINT = (
     "형식을 정확히 지켜 스키마에 맞는 JSON만 다시 출력해라. "
     "kind는 method/software/library 중 하나여야 한다."
 )
+
+# ── verify ───────────────────────────────────────────────────────────────
+# 툴 없는 단발 구조화 출력 — 후보당 1회 (3-verify.md). dossier 밖의 것을 프롬프트에
+# 넣지 않는 것 자체가 "judge가 인용할 수 있는 집합"을 물리적으로 제한하는 장치다.
+# 앵커(반례)를 박지 않으면 judge는 거의 모든 후보에 solves_it=true를 준다.
+
+VERIFY_SYSTEM_PROMPT = """당신은 소프트웨어 후보 하나를 판정하는 심사관이다.
+아래 dossier에 있는 사실만 근거로 쓸 수 있다 — 판사가 제출된 자료철 밖을 인용할 수
+없는 것과 같다.
+
+두 가지에 답한다:
+1. 이 후보가 정말 이 요소를 해결하는가 (solves_it)
+2. 장단점과, 조건부로만 성립하는 것은 무엇인가 (pros / cons / caveats)
+
+solves_it = false 로 판정해야 하는 경우 — 하나라도 해당하면 false다:
+- dossier에 이 요소의 요구사항을 충족한다는 근거가 없다
+- gh.archived 가 true 이거나 npm.deprecated 가 true 다
+- 마지막 릴리스나 마지막 커밋이 2년을 넘었다 (유지보수 중단으로 본다)
+- 요구 규모·기간·팀 크기와 명백히 불일치한다 (근거 사실을 인용해 설명한다)
+
+"널리 쓰인다", "업계 표준이다" 같은 인상은 근거가 아니다. dossier에 그 사실이 없으면
+solves_it 을 true 로 만드는 이유가 되지 못한다.
+
+confidence = "low" 로 판정해야 하는 경우:
+- dossier_gaps 가 핵심 항목(릴리스·커밋·취약점)을 포함한다
+- 인용 가능한 사실이 2건 이하다
+- 근거가 웹 스니펫(web.N)뿐이다
+
+confidence = "high" 는 릴리스·활동·취약점을 모두 확인했을 때만 준다.
+
+citations 규칙:
+- dossier에 있는 fact_id 만 쓴다. 목록에 없는 id를 지어내면 재판정된다
+- 근거가 없는 판단은 citations 대신 unsupported_claims 에 적는다.
+  "근거는 없지만 경험상 그렇다"는 거기 적는 게 정직한 것이다
+- solves_reason 에는 인용한 사실의 값(날짜·숫자)을 직접 써서 설명한다
+
+candidate 와 component 에는 아래 주어진 이름을 한 글자도 바꾸지 말고 그대로 쓴다.
+"""
+
+_VERIFY_HUMAN = """후보: {candidate_name} ({candidate_kind})
+무엇인가: {what_it_is}
+
+소속 요소: {component_name}
+왜 필요한가: {component_why}
+개발 방향: {approach_notes}
+
+프로젝트 맥락:
+{refined_brief}
+
+제약조건 가정:
+{assumptions}
+
+dossier — 인용할 수 있는 사실 전부:
+{dossier}
+
+dossier_gaps — 구하지 못한 것:
+{dossier_gaps}
+
+이 후보를 판정해라."""
+
+VERIFY_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        ("system", VERIFY_SYSTEM_PROMPT),
+        ("human", _VERIFY_HUMAN),
+    ]
+)
+
+# 재판정은 human 메시지 하나에 위반 목록까지 담는다 — human을 두 번 이어 붙이면
+# Bedrock Converse의 역할 교대 제약에 걸린다.
+_VERIFY_REGROUND_SUFFIX = """
+
+---
+직전 판정에서 dossier에 없는 fact_id를 인용했다:
+{violations}
+
+이 id들은 위 dossier 목록에 존재하지 않는다. 다시 판정해라:
+- citations에는 위 dossier 목록에 실제로 있는 fact_id만 넣는다
+- 그 인용으로 뒷받침하려던 판단은 unsupported_claims 로 옮긴다
+- 인용할 수 있는 사실이 줄었으면 confidence를 낮춘다"""
+
+VERIFY_REGROUND_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        ("system", VERIFY_SYSTEM_PROMPT),
+        ("human", _VERIFY_HUMAN + _VERIFY_REGROUND_SUFFIX),
+    ]
+)
+
+VERIFY_RETRY_HINT = (
+    "형식을 정확히 지켜 스키마에 맞는 JSON만 다시 출력해라. "
+    "confidence는 high/medium/low 중 하나이고, citations는 dossier에 있는 "
+    "fact_id 문자열의 목록이다."
+)

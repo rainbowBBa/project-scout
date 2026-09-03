@@ -59,7 +59,7 @@ Day 1
 Day 2
 [x] STEP 04  MCP 서버    providers 4종 완료 · 단독 호출 확인
 [x] STEP 05  search      ReAct 에이전트 + 웹검색 승인 게이트 · candidates/facts/gaps 채워짐
-[ ] STEP 06  verify      verdicts/citations + test_grounding 통과
+[x] STEP 06  verify      verdicts/citations + test_grounding 통과
 [ ] STEP 07  evaluate    scores 3기준 + overall + score_reason + margin
 [ ] STEP 08  report      브라우저에서 열리는 report.html
 [ ] STEP 09  검증        테스트 4종 + E2E 완주

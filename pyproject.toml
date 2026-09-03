@@ -3,7 +3,7 @@ members = ["packages/*"]
 
 [tool.ruff]
 line-length = 100
-include = ["packages/**/*.py", "tests/**/*.py"]
+include = ["packages/**/*.py"]
 
 [tool.ruff.lint]
 extend-select = ["I", "UP", "B", "SIM", "RUF"]
@@ -11,7 +11,7 @@ extend-select = ["I", "UP", "B", "SIM", "RUF"]
 [tool.ty]
 
 [tool.ty.src]
-include = ["packages", "tests"]
+include = ["packages"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

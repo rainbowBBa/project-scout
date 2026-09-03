@@ -6,6 +6,47 @@
 
 ---
 
+## v18 (2026-09-03) — `verify`: 강등 규칙과 판정 정체성을 코드로 못박음
+
+STEP-06을 구현하면서 `3-verify.md`의 "실패 처리"를 두 곳 정밀화했다. 설계의 방향을
+바꾼 게 아니라, 구현하면서 드러난 빈틈을 메운 것이다.
+
+### 1. 위반 인용을 DB에 남기지 않는다
+
+v17까지 "2차 위반 → `confidence: low` 강등 + 카운트 기록"까지만 정해져 있었다.
+그런데 **지어낸 `fact_id`가 `citations` 테이블에 그대로 남는다.** 그러면 `evaluate`와
+`report`가 존재하지 않는 사실을 조인하려 들고, 불변식 4("judge는 dossier의 `fact_id`만
+인용한다")가 데이터 층위에서 깨진 채로 남는다.
+
+위반 인용은 `citations`에서 걷어내고 `unsupported_claims`로 옮긴다. 지우기만 하면
+judge가 무엇을 지어냈는지가 사라지므로, **DB에는 dossier 안의 인용만 남기되 지어낸
+id는 기록으로 남긴다.** 강등을 두 번 저장하는 경로가 생겨 `grounding_violations`
+카운트가 0으로 덮이는 버그도 여기서 나왔다 — 인용을 전부 걷어내면 "인용 0개" 규칙에
+연달아 걸린다.
+
+### 2. 후보명·요소명은 judge가 아니라 코드가 확정한다
+
+`Verdict`에 `candidate`·`component` 필드가 있어 judge가 채운다. judge가 이름을 조금만
+바꿔 써도(`socket.io` → `Socket.IO`) `verdicts` 행이 `candidates`·`facts`와 조인되지
+않고, **그러면 grounding 대조 자체가 조용히 무력해진다** — 위반이 0건으로 나온다.
+파싱 직후 코드가 두 필드를 덮어쓴다.
+
+### 판정 LLM 구성 — `search`와 다른 이유
+
+`search`만 에이전트(`create_agent`)이고 `verify`는 툴 없는 단발 구조화 출력이다.
+dossier는 이미 DB에 있으니 판정에 툴이 필요 없다. 후보당 1회(pointwise), 정상 경로는
+그게 전부고 파싱 실패·grounding 위반에만 각 1회가 붙는다.
+
+`Send` fan-out을 쓰지 않은 이유는 v17과 같다 — `cli.py`의 스트림 루프가 서브노드
+이름에서 죽는다. `verify` 노드 하나가 내부에서 `asyncio.gather`로 펼치고,
+동시성은 `Semaphore(scout_llm_concurrency)` = 4다 (MCP의 8이 아니다).
+
+LLM 호출만 `asyncio.to_thread`로 뺀다. `invoke_structured`가 동기 `.invoke()`라
+그냥 부르면 이벤트 루프를 막아 후보 10개가 사실상 순차 실행된다. 반대로 `store` 접근은
+이벤트 루프 스레드에 남겨둔다 — 병렬 판정 중에도 sqlite 쓰기가 저절로 직렬화된다.
+
+---
+
 ## v17 (2026-09-03) — `search`: 3턴 파이프라인 → ReAct 에이전트 + 웹검색 사람 승인
 
 STEP-05를 구현하면서 설계 두 곳을 뒤집었다.
