@@ -188,7 +188,7 @@
   {% if skipped %}
   <ul class="plain">
     {% for c in skipped %}
-    <li><strong>{{ c.name }}</strong> ({{ c.necessity }}, priority {{ c.priority }}) — {{ c.why }}</li>
+    <li><strong>{{ c.name }}</strong> ({{ c.necessity }}, priority {{ c.priority }}) — {{ c.role_in_design }}</li>
     {% endfor %}
   </ul>
   <p class="score-reason">더 보려면 <code>--max-components {{ skipped_reopen_count }}</code>로 다시 돌리세요.</p>

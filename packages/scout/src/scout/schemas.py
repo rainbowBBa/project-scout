@@ -16,19 +16,38 @@ class InterviewTurn(BaseModel):
     question: str | None = None
 
 
+class Architecture(BaseModel):
+    """기본틀(v1). evaluate가 조사 결과로 수정해 FinalDesign으로 확정한다 (1-design.md)."""
+
+    summary: str
+    shape: str
+    data_flow: str
+    build_order: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+
+
 class Component(BaseModel):
+    """설계의 구성 단위이면서 **비교해서 정해야 할 결정 지점** (1-design.md)."""
+
     name: str
     kind: Literal["feature", "data", "infrastructure", "integration", "ops"]
-    why: str
+    role_in_design: str
+    decision_question: str
+    constraints: list[str] = Field(default_factory=list)
+    # necessity("필요한가")와 다른 축이다 — "지금 비교해서 골라야 하는가".
+    # false면 설계에서 이미 닫힌 결정이라 search에 가지 않는다 (불변식 17)
+    needs_comparison: bool = True
+    no_comparison_reason: str = ""
     necessity: Literal["essential", "valuable", "defer", "unnecessary"]
     necessity_reason: str
     priority: int
     approach_notes: str
-    # search 단계에 상태로만 넘긴다 — components 테이블에는 저장하지 않는다 (1-analyze.md)
+    # 영어 기술 어휘. 비면 search가 한국어 추상어로 npm_search를 부르게 된다 (불변식 16)
     search_hints: list[str] = Field(default_factory=list)
 
 
-class Analysis(BaseModel):
+class Design(BaseModel):
+    architecture: Architecture
     components: list[Component]
 
 

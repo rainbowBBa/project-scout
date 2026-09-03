@@ -37,7 +37,8 @@ def _seed_basic(runs_dir: str) -> None:
             Component(
                 name="실시간 메시지 전달",
                 kind="feature",
-                why="사용자 간 즉시 전달이 핵심",
+                role_in_design="사용자 간 즉시 전달이 핵심",
+                decision_question="즉시 전달을 감당할 전달 계층은 무엇인가",
                 necessity="essential",
                 necessity_reason="없으면 서비스가 성립하지 않는다",
                 priority=1,
@@ -46,7 +47,8 @@ def _seed_basic(runs_dir: str) -> None:
             Component(
                 name="메시지 전문검색",
                 kind="feature",
-                why="과거 대화를 찾는다",
+                role_in_design="과거 대화를 찾는다",
+                decision_question="과거 대화를 찾는 검색 방식은 무엇인가",
                 necessity="defer",
                 necessity_reason="200명이면 LIKE로 충분",
                 priority=5,
@@ -55,7 +57,8 @@ def _seed_basic(runs_dir: str) -> None:
             Component(
                 name="파일 첨부",
                 kind="feature",
-                why="문서를 공유한다",
+                role_in_design="문서를 공유한다",
+                decision_question="문서 공유를 감당할 저장·전송 방식은 무엇인가",
                 necessity="valuable",
                 necessity_reason="핵심은 아니지만 있으면 좋다",
                 priority=4,

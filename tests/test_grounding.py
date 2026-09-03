@@ -189,7 +189,8 @@ def _run_verify_one(llm: _StubLLM, candidate: Candidate, runs_dir: str) -> Verdi
     component = Component(
         name="실시간 메시지 전달",
         kind="feature",
-        why="사용자 간 즉시 전달이 서비스의 핵심",
+        role_in_design="사용자 간 즉시 전달이 서비스의 핵심",
+        decision_question="즉시 전달을 감당할 전달 계층은 무엇인가",
         necessity="essential",
         necessity_reason="없으면 서비스가 성립하지 않는다",
         priority=1,

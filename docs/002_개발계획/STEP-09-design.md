@@ -67,6 +67,8 @@ name 기술 중립 (편향 방지)
   (`create_agent` → `invoke_structured`), `approve`를 받는다,
   `wrap_web_search(..., budget=3)`, `select_passing_components`에
   `needs_comparison` 필터 추가
+- 툴 루프는 `recursion_limit=10`(superstep 수 — 툴 호출 4~5회). `ainvoke`가 아니라
+  `astream`으로 돌려 한도 초과(`GraphRecursionError`) 시 **부분 기록을 살린다**
 - `scout/graph.py` — 노드 `analyze` → `design`, 엣지 2개
 - `scout/cli.py` — `STAGE_ORDER` · `IMPLEMENTED_STAGES` · `STAGE_LABELS`(`"design": "설계"`) ·
   `Stage`/`ShowStage` enum · `_print_stage_summary`의 분기 · `show` 출력

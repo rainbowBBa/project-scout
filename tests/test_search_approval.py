@@ -8,15 +8,15 @@
 from typing import ClassVar
 
 from langchain_core.tools import StructuredTool
-from scout.stages.search import (
+from scout.agentkit import collect_tool_calls
+from scout.approval import (
     APPROVAL_NOTICE,
     Approval,
     NonInteractive,
     SearchGate,
-    collect_tool_calls,
-    facts_for_candidate,
     wrap_web_search,
 )
+from scout.stages.search import facts_for_candidate
 
 
 class _SpyTool:
@@ -138,9 +138,9 @@ class _FakeToolMessage:
 
 def test_facts_come_from_tool_payload_not_llm_text(monkeypatch):
     """judge가 인용할 사실은 ToolMessage 원본에서 나와야 한다 (불변식 4의 뿌리)."""
-    import scout.stages.search as search_mod
+    import scout.agentkit as agentkit
 
-    monkeypatch.setattr(search_mod, "ToolMessage", _FakeToolMessage)
+    monkeypatch.setattr(agentkit, "ToolMessage", _FakeToolMessage)
 
     messages = [
         _FakeAI([{"id": "c1", "name": "npm_package", "args": {"name": "socket.io"}}]),
@@ -160,9 +160,9 @@ def test_facts_come_from_tool_payload_not_llm_text(monkeypatch):
 
 
 def test_facts_are_not_attached_to_unrelated_candidate(monkeypatch):
-    import scout.stages.search as search_mod
+    import scout.agentkit as agentkit
 
-    monkeypatch.setattr(search_mod, "ToolMessage", _FakeToolMessage)
+    monkeypatch.setattr(agentkit, "ToolMessage", _FakeToolMessage)
 
     messages = [
         _FakeAI([{"id": "c1", "name": "npm_package", "args": {"name": "socket.io"}}]),

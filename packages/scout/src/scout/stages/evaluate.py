@@ -88,7 +88,7 @@ def _prompt_input(
 ) -> dict[str, str]:
     return {
         "component_name": component_name,
-        "component_why": component.why if component else "(요소 정보 없음)",
+        "component_why": component.role_in_design if component else "(요소 정보 없음)",
         "approach_notes": component.approach_notes if component else "(없음)",
         "refined_brief": interview.refined_brief,
         "assumptions": "\n".join(f"- {a}" for a in interview.assumptions) or "(없음)",

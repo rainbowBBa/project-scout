@@ -135,7 +135,7 @@ gaps가 핵심 항목을 포함하면 judge는 `confidence: low`를 내야 한�
   ReAct 루프   agent ⇄ tools
                npm_search · npm_package · pypi_package
                github_repo_health · web_search(승인 게이트)
-               → recursion_limit 40으로 상한
+               → recursion_limit 40으로 상한 (superstep 수 — 툴 호출 ~20회)
 
   코드         ToolMessage 원본에서 Fact 추출 (LLM 개입 없음)
   LLM          후보 정리 · 중복 제거 (구조화 출력)

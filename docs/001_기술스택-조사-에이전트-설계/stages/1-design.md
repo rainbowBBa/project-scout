@@ -171,7 +171,7 @@ LLM은 눈에 보이는 기능만 나열하고 배포·운영·인증을 잊는 
 
 ```python
 agent = create_agent(llm, tools, system_prompt=DESIGN_AGENT_SYSTEM_PROMPT, checkpointer=False)
-result = await agent.ainvoke({"messages": [...]}, config={"recursion_limit": 40})
+messages, truncated = await explore(agent, task)   # 내부에서 astream · recursion_limit 10
 ```
 
 에이전트가 툴을 부르며 설계를 세운다. 무엇을 확인하는가:
@@ -181,7 +181,20 @@ result = await agent.ainvoke({"messages": [...]}, config={"recursion_limit": 40}
 - 레지스트리에 없는 **아키텍처 패턴·사례** (`web_search`)
 
 `checkpointer=False`가 필수다 — 안 주면 바깥 그래프의 `SqliteSaver`(동기 전용)를
-물려받는데 이 에이전트는 `ainvoke`로 돈다.
+물려받는데 이 에이전트는 `astream`으로 돈다.
+
+#### 툴 루프 상한 — `recursion_limit` 10, 그리고 걸려도 죽지 않는다
+
+`recursion_limit`은 **툴 호출 수가 아니라 superstep 수**다. ReAct는 한 바퀴가
+model + tools 두 스텝이라 **10이면 툴 호출 4~5회**쯤이다. 설계는 후보 이름·어휘만
+확인하면 되므로 프로토타입에서는 그 정도로 충분하고, 루프를 오래 돌면 누적 입력이
+토큰을 그대로 먹는다.
+
+`ainvoke`가 아니라 `astream`을 쓰는 이유가 여기 있다 — **한도 초과는 예외다**
+(`GraphRecursionError`). 그 예외는 상태를 담아주지 않아서 `ainvoke`로 받으면 그때까지
+모은 툴 기록이 함께 날아간다. `astream`으로 마지막 상태를 들고 있으면 **부분 기록으로도
+설계를 뽑을 수 있다** — 아무것도 없이 죽는 것보다 낫고, 한도 초과 사실은 `gaps`에
+남는다 (불변식 11).
 
 ### 2. 추출 — 구조화 출력
 

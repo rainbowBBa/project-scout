@@ -81,5 +81,7 @@ judge의 `solves_it` 또는 `evaluate`의 `maturity` 계산. 둘 중 하나만 �
 E2E에서 기존 run 폴더를 재사용하면 `no such column`이 난다. **새 slug로 돌린다** —
 `components` 컬럼이 STEP 09에서 바뀌었고 마이그레이션 장치가 없다.
 
-토큰이 추정을 크게 넘으면 `design`의 `recursion_limit`(40)과 웹검색 예산(3)을 먼저 본다.
+토큰이 추정을 크게 넘으면 `design`의 `recursion_limit`(10)과 웹검색 예산(3)을 먼저 본다.
 설계 에이전트가 툴 루프를 오래 도는 게 가장 흔한 원인이다.
+`gaps`에 "툴 탐색이 한도에 걸려 중단됨"이 매번 찍히면 10이 너무 빡빡한 것이다 —
+설계 품질을 보고 올린다.

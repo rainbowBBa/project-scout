@@ -4,7 +4,14 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from scout.schemas import Candidate, Component, Fact, Interview, Verdict
+from scout.schemas import (
+    Architecture,
+    Candidate,
+    Component,
+    Fact,
+    Interview,
+    Verdict,
+)
 
 DDL = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -14,15 +21,29 @@ CREATE TABLE IF NOT EXISTS runs (
     interview_json TEXT
 );
 
+CREATE TABLE IF NOT EXISTS designs (
+    slug TEXT PRIMARY KEY,
+    summary TEXT NOT NULL,
+    shape TEXT NOT NULL,
+    data_flow TEXT NOT NULL,
+    build_order_json TEXT NOT NULL,
+    open_questions_json TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS components (
     slug TEXT NOT NULL,
     name TEXT NOT NULL,
     kind TEXT NOT NULL,
-    why TEXT NOT NULL,
+    role_in_design TEXT NOT NULL,
+    decision_question TEXT NOT NULL,
+    constraints_json TEXT NOT NULL,
+    needs_comparison INTEGER NOT NULL,
+    no_comparison_reason TEXT NOT NULL,
     necessity TEXT NOT NULL,
     necessity_reason TEXT NOT NULL,
     priority INTEGER NOT NULL,
     approach_notes TEXT NOT NULL,
+    search_hints_json TEXT NOT NULL,
     PRIMARY KEY (slug, name)
 );
 
@@ -161,30 +182,84 @@ def get_run(slug: str, *, runs_dir: str | None = None) -> dict | None:
         }
 
 
-# ── components ───────────────────────────────────────────────────────────
+# ── designs / components ─────────────────────────────────────────────────
+
+
+def upsert_design(
+    slug: str, architecture: Architecture, *, runs_dir: str | None = None
+) -> None:
+    """조사 전 기본틀(v1). evaluate가 확정한 v2는 final_designs로 따로 들어간다 —
+    이 행은 덮어쓰지 않는다. 두 버전의 대조가 보고서의 재료다 (03-저장.md).
+    """
+    with _conn(slug, runs_dir) as conn:
+        conn.execute(
+            """
+            INSERT INTO designs (slug, summary, shape, data_flow, build_order_json, open_questions_json)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(slug) DO UPDATE SET
+                summary = excluded.summary,
+                shape = excluded.shape,
+                data_flow = excluded.data_flow,
+                build_order_json = excluded.build_order_json,
+                open_questions_json = excluded.open_questions_json
+            """,
+            (
+                slug,
+                architecture.summary,
+                architecture.shape,
+                architecture.data_flow,
+                json.dumps(architecture.build_order, ensure_ascii=False),
+                json.dumps(architecture.open_questions, ensure_ascii=False),
+            ),
+        )
+
+
+def get_design(slug: str, *, runs_dir: str | None = None) -> Architecture | None:
+    with _conn(slug, runs_dir) as conn:
+        row = conn.execute("SELECT * FROM designs WHERE slug = ?", (slug,)).fetchone()
+    if row is None:
+        return None
+    return Architecture(
+        summary=row["summary"],
+        shape=row["shape"],
+        data_flow=row["data_flow"],
+        build_order=json.loads(row["build_order_json"]),
+        open_questions=json.loads(row["open_questions_json"]),
+    )
 
 
 def upsert_components(
     slug: str, components: list[Component], *, runs_dir: str | None = None
 ) -> None:
-    # analyze는 실행마다 요소 전체를 다시 도출한다 — 전체 교체가 재실행 시맨틱과 맞다.
+    # design은 실행마다 결정 지점 전체를 다시 도출한다 — 전체 교체가 재실행 시맨틱과 맞다.
     with _conn(slug, runs_dir) as conn:
         conn.execute("DELETE FROM components WHERE slug = ?", (slug,))
         conn.executemany(
             """
-            INSERT INTO components (slug, name, kind, why, necessity, necessity_reason, priority, approach_notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO components (
+                slug, name, kind, role_in_design, decision_question, constraints_json,
+                needs_comparison, no_comparison_reason,
+                necessity, necessity_reason, priority, approach_notes, search_hints_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
                     slug,
                     c.name,
                     c.kind,
-                    c.why,
+                    c.role_in_design,
+                    c.decision_question,
+                    json.dumps(c.constraints, ensure_ascii=False),
+                    int(c.needs_comparison),
+                    c.no_comparison_reason,
                     c.necessity,
                     c.necessity_reason,
                     c.priority,
                     c.approach_notes,
+                    # search_hints를 저장한다 — 상태로만 넘기면 재실행 경로에서 사라져
+                    # design이 만든 효과가 소멸한다 (03-저장.md)
+                    json.dumps(c.search_hints, ensure_ascii=False),
                 )
                 for c in components
             ],
@@ -200,11 +275,16 @@ def get_components(slug: str, *, runs_dir: str | None = None) -> list[Component]
             Component(
                 name=r["name"],
                 kind=r["kind"],
-                why=r["why"],
+                role_in_design=r["role_in_design"],
+                decision_question=r["decision_question"],
+                constraints=json.loads(r["constraints_json"]),
+                needs_comparison=bool(r["needs_comparison"]),
+                no_comparison_reason=r["no_comparison_reason"],
                 necessity=r["necessity"],
                 necessity_reason=r["necessity_reason"],
                 priority=r["priority"],
                 approach_notes=r["approach_notes"],
+                search_hints=json.loads(r["search_hints_json"]),
             )
             for r in rows
         ]

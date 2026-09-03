@@ -14,20 +14,20 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from pydantic import ValidationError
 
 from scout import store
+from scout.approval import auto_approve, default_approve
 from scout.config import Settings
 from scout.graph import build_graph, make_slug
 from scout.llm import make_llm
 from scout.mcp_client import make_mcp_client
-from scout.stages import search as search_stage
 
 app = typer.Typer()
 
 # 파이프라인 6단계 전체 이름. 아직 구현된 노드만 IMPLEMENTED_STAGES에 있다 — STEP이 끝날 때마다 하나씩 늘어난다.
-STAGE_ORDER = ["interview", "analyze", "search", "verify", "evaluate", "report"]
-IMPLEMENTED_STAGES = ["interview", "analyze", "search", "verify", "evaluate", "report"]
+STAGE_ORDER = ["interview", "design", "search", "verify", "evaluate", "report"]
+IMPLEMENTED_STAGES = ["interview", "design", "search", "verify", "evaluate", "report"]
 STAGE_LABELS = {
     "interview": "인터뷰",
-    "analyze": "분석",
+    "design": "설계",
     "search": "검색",
     "verify": "검증",
     "evaluate": "평가",
@@ -37,7 +37,7 @@ STAGE_LABELS = {
 
 class ShowStage(str, Enum):
     interview = "interview"
-    analyze = "analyze"
+    design = "design"
     search = "search"
     verify = "verify"
     evaluate = "evaluate"
@@ -45,7 +45,7 @@ class ShowStage(str, Enum):
 
 class Stage(str, Enum):
     interview = "interview"
-    analyze = "analyze"
+    design = "design"
     search = "search"
     verify = "verify"
     evaluate = "evaluate"
@@ -225,11 +225,7 @@ def _run_pipeline(
     typer.echo(f"\n[{STAGE_LABELS['interview']}] 단계를 시작합니다.")
     stopped_early = False
     report_path: str | None = None
-    approve = (
-        search_stage.auto_approve
-        if auto_approve_search
-        else search_stage.default_approve
-    )
+    approve = auto_approve if auto_approve_search else default_approve
     with SqliteSaver.from_conn_string(checkpoint_path) as checkpointer:
         graph = build_graph(llm, checkpointer, approve=approve)
         for update in graph.stream(
@@ -260,17 +256,22 @@ def _print_stage_summary(node_name: str, node_output: dict) -> None:
                 typer.echo(f"    - {a}")
         else:
             typer.echo("  가정: (없음 — 전부 응답함)")
-    elif node_name == "analyze":
+    elif node_name == "design":
+        architecture = node_output["architecture"]
         components = node_output["components"]
+        typer.echo(f"  설계: {architecture.summary}")
+        if architecture.build_order:
+            typer.echo(f"  무엇부터: {' → '.join(architecture.build_order)}")
         typer.echo(
-            f"  통과 {len(components)}개 (걸러진 것 포함 전체 목록은 "
-            "`scout show <slug> analyze`)"
+            f"  통과 {len(components)}개 (닫힌 결정·걸러진 것 포함 전체 목록은 "
+            "`scout show <slug> design`)"
         )
         for c in components:
             typer.echo(
                 f"    [{c.necessity}] {c.name} ({c.kind}) — priority {c.priority}"
             )
-            typer.echo(f"      이유: {c.necessity_reason}")
+            typer.echo(f"      정할 것: {c.decision_question}")
+            typer.echo(f"      힌트: {', '.join(c.search_hints) or '(없음)'}")
     elif node_name == "search":
         candidates = node_output["candidates"]
         typer.echo(
@@ -360,8 +361,12 @@ def show(slug: str, stage: ShowStage) -> None:
     result: object
     if stage is ShowStage.interview:
         result = store.get_run(slug)
-    elif stage is ShowStage.analyze:
-        result = [c.model_dump() for c in store.get_components(slug)]
+    elif stage is ShowStage.design:
+        architecture = store.get_design(slug)
+        result = {
+            "architecture": architecture.model_dump() if architecture else None,
+            "components": [c.model_dump() for c in store.get_components(slug)],
+        }
     elif stage is ShowStage.search:
         result = {
             "candidates": [c.model_dump() for c in store.get_candidates(slug)],
