@@ -76,7 +76,7 @@ id는 `<출처>.<항목>` 규칙으로 만든다.
 |---|---|
 | `npm.last_release` `npm.license` `npm.deprecated` | `npm_package` |
 | `pypi.last_release` `pypi.yanked` | `pypi_package` |
-| `gh.last_commit` `gh.archived` `gh.contributors` `gh.issue_close_rate` | `github_repo_health` |
+| `gh.last_commit` `gh.archived` `gh.contributors` `gh.stars` `gh.issue_close_rate` | `github_repo_health` |
 | `osv.vulns` `osv.max_severity` | `osv_query` |
 | `web.1` `web.2` `web.3` … | `web_search` (스니펫 순번) |
 

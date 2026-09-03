@@ -127,6 +127,10 @@ overall 차이 >= 2  →  "decisive"
 overall 차이 <= 1  →  "close"
 ```
 
+이건 뺄셈이지 판단이 아니다. **코드가 계산해 judge가 채운 `margin`을 덮어쓴다** —
+`ElementPick`에 필드를 둔 건 judge가 1·2위 차이를 의식하고 `winner_reason`을 쓰게
+하려는 것이지, 그 값을 믿으려는 게 아니다. 통과 후보가 1개면 `decisive`다.
+
 `close`면 보고서에 **"근접 — 2위도 합리적 선택"**을 표시한다.
 "1위가 socket.io"와 "socket.io 4 vs ws 3"은 의사결정에서 완전히 다른 정보다.
 후보가 2~3개뿐인 프로토타입 규모에서 특히 값어치 있다.
@@ -200,6 +204,11 @@ archived       gh.archived = true → 무조건 1
 최소값을 쓰는 이유: 별이 5만 개라도 3년째 커밋이 없으면 성숙한 게 아니다.
 평균을 쓰면 강한 신호가 약한 신호를 가린다.
 
+신호가 일부만 있으면 **있는 신호만의 최소값**을 취한다 — 없는 신호를 5로도 1로도
+채우지 않는다. 없는 것을 5로 채우면 조회 실패가 좋은 점수로 둔갑하고, 1로 채우면
+`gh` 사실이 없는 후보가 전부 최하점이 된다. 셋 다 없으면 계산하지 않고
+`unavailable`이다 (`method` 후보가 이 경우다).
+
 ### `risk` — 1~5 (높을수록 안전)
 
 ```
@@ -212,6 +221,13 @@ deprecated    npm.deprecated 또는 pypi.yanked → 1
 
 → 하한 1, 상한 5로 클램프
 ```
+
+`osv.*`는 절단선 1번이라 [STEP 10](../../002_개발계획/STEP-10-선택.md)까지 dossier에
+없다. **없으면 취약점·심각도 항목을 건너뛴다** — 0건으로 간주해 5를 주지 않는다.
+"조회하지 않았다"와 "조회했더니 0건이다"는 다른 사실이고, 뒤엣것으로 대접하면
+`risk`가 근거 없이 후해진다. `osv`를 붙이면 공식은 그대로 두고 사실만 늘어난다.
+
+근거가 될 사실이 하나도 없으면 `maturity`와 같이 `unavailable`이다.
 
 두 공식 모두 `facts` 테이블에서 SQL로 값을 꺼낸다.
 
@@ -251,6 +267,10 @@ scores (slug, candidate, criterion, score, source, reason)
 picks  (slug, component, candidate, rank, rejected_reason,
         winner_reason, runner_up_note, margin)
 ```
+
+`scores`에는 **탈락 후보의 `maturity`·`risk`도 들어간다.** 탈락 후보를 계산에서 빼면
+"judge는 통과시켰지만 계산은 1을 줬다"를 보고서에서 보여줄 수 없고, 이중 안전망이
+작동한 증거가 사라진다. `overall`만 통과 후보의 것이다.
 
 `picks`에는 통과 후보와 탈락 후보가 모두 들어간다.
 탈락은 `rank = NULL` + `rejected_reason` 채움. 보고서의 "탈락 사유 부록"이 이 행들이다.
