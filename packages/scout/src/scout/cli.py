@@ -18,12 +18,13 @@ from scout.config import Settings
 from scout.graph import build_graph, make_slug
 from scout.llm import make_llm
 from scout.mcp_client import make_mcp_client
+from scout.stages import search as search_stage
 
 app = typer.Typer()
 
 # 파이프라인 6단계 전체 이름. 아직 구현된 노드만 IMPLEMENTED_STAGES에 있다 — STEP이 끝날 때마다 하나씩 늘어난다.
 STAGE_ORDER = ["interview", "analyze", "search", "verify", "evaluate", "report"]
-IMPLEMENTED_STAGES = ["interview", "analyze"]
+IMPLEMENTED_STAGES = ["interview", "analyze", "search"]
 STAGE_LABELS = {
     "interview": "인터뷰",
     "analyze": "분석",
@@ -155,11 +156,25 @@ def run(
     ] = None,
     max_components: Annotated[int | None, typer.Option("--max-components")] = None,
     max_candidates: Annotated[int | None, typer.Option("--max-candidates")] = None,
+    auto_approve_search: Annotated[
+        bool,
+        typer.Option(
+            "--auto-approve-search",
+            help="웹검색 승인을 자동으로 통과시킨다 (비대화형 재현용)",
+        ),
+    ] = False,
 ) -> None:
     """파이프라인을 실행한다. 설명을 인자로 안 주면 대화형으로 묻는다 (개발용 —
     `--from`/`--stop-after`/`--max-components`/`--max-candidates`로 재현·재개한다).
     """
-    _run_pipeline(description, from_stage, stop_after, max_components, max_candidates)
+    _run_pipeline(
+        description,
+        from_stage,
+        stop_after,
+        max_components,
+        max_candidates,
+        auto_approve_search=auto_approve_search,
+    )
 
 
 def _run_pipeline(
@@ -168,6 +183,8 @@ def _run_pipeline(
     stop_after: Stage | None,
     max_components: int | None,
     max_candidates: int | None,
+    *,
+    auto_approve_search: bool = False,
 ) -> None:
     for stage in (from_stage, stop_after):
         if stage is not None and stage.value not in IMPLEMENTED_STAGES:
@@ -207,8 +224,13 @@ def _run_pipeline(
 
     typer.echo(f"\n[{STAGE_LABELS['interview']}] 단계를 시작합니다.")
     stopped_early = False
+    approve = (
+        search_stage.auto_approve
+        if auto_approve_search
+        else search_stage.default_approve
+    )
     with SqliteSaver.from_conn_string(checkpoint_path) as checkpointer:
-        graph = build_graph(llm, checkpointer)
+        graph = build_graph(llm, checkpointer, approve=approve)
         for update in graph.stream(
             initial_state,
             config={"configurable": {"thread_id": slug}},
@@ -246,6 +268,17 @@ def _print_stage_summary(node_name: str, node_output: dict) -> None:
                 f"    [{c.necessity}] {c.name} ({c.kind}) — priority {c.priority}"
             )
             typer.echo(f"      이유: {c.necessity_reason}")
+    elif node_name == "search":
+        candidates = node_output["candidates"]
+        typer.echo(
+            f"  후보 {len(candidates)}개 (사실 원본은 `scout show <slug> search`)"
+        )
+        for c in candidates:
+            fact_ids = ", ".join(f.id for f in c.dossier) or "(없음)"
+            typer.echo(f"    {c.name} [{c.kind}] — {c.component}")
+            typer.echo(f"      사실 {len(c.dossier)}개: {fact_ids}")
+            for gap in c.dossier_gaps:
+                typer.echo(f"      gap: {gap}")
 
 
 def _maybe_print_next_stage_banner(node_name: str) -> None:

@@ -107,44 +107,114 @@ gaps가 핵심 항목을 포함하면 judge는 `confidence: low`를 내야 한�
 
 ---
 
-## 동작 — 3턴 파이프라인 (에이전트 아님)
+## 동작 — ReAct 에이전트
 
-요소마다 아래를 돈다. LangGraph `Send`로 fan-out.
+요소마다 `create_react_agent` 하나를 돌린다. 에이전트가 툴을 직접 고르고, 여러 번
+부른다.
 
 ```
 요소 "실시간 메시지 전달"
 
-  (1) LLM   조사 질의 생성 (구조화)
-            search_hints + 제약조건 → ["websocket server node",
-                                       "socket.io alternative 2026",
-                                       "postgres realtime push"]
+  ReAct 루프   agent ⇄ tools
+               npm_search · npm_package · pypi_package
+               github_repo_health · web_search(승인 게이트)
+               → recursion_limit 40으로 상한
 
-  (2) 코드   npm_search + web_search 병렬 실행 (LLM 개입 없음)
-            → 후보 추출 → kind 판정 → 위 라우팅대로 dossier 수집 병렬
-
-  (3) LLM   후보 정리 · 중복 제거 (구조화)
-            → 요소당 2~3개
+  코드         ToolMessage 원본에서 Fact 추출 (LLM 개입 없음)
+  LLM          후보 정리 · 중복 제거 (구조화 출력)
+  코드         kind별 필수 사실 누락분 보충
 ```
 
-### 왜 ReAct 에이전트가 아닌가
+### ★ 사실은 툴 원본에서만 나온다
 
-DuckDuckGo 스니펫 품질이 나쁘고 모델이 Sonnet이라, 에이전트에 검색을 맡기면 헤맨다.
-질의를 만들고 결과를 정리하는 것만 LLM에 맡기고 **실행은 코드가 한다.**
+에이전트는 **어떤 툴을 부를지만** 정한다. `Fact.value`는 에이전트가 쓴 문장이 아니라
+`ToolMessage`의 원본 payload에서 코드가 파싱한다. 사실을 후보에 연결하는 것도
+코드다 — 툴 호출 인자와 후보 이름을 대조한다 (`call_matches`).
 
-예측 가능하고, 저렴하고, 어느 턴이 틀렸는지 짚힌다.
-나중에 `create_react_agent`로 바꿀 여지는 남는다.
+이 경계가 무너지면 judge가 인용하는 dossier 자체가 LLM 생성물이 되고,
+**grounding 검사는 통과하는데 사실은 환각인** 최악의 상태가 된다.
+[3-verify](3-verify.md)의 인용 강제가 지탱하던 주장이 뿌리에서 깨진다.
+
+### 왜 ReAct 에이전트인가 — v14까지의 판단이 뒤집힌 경위
+
+v14까지 이 문서는 "3턴 파이프라인(에이전트 아님)"이었다. 근거는 하나였다 —
+*"DuckDuckGo 스니펫 품질이 나쁘고 모델이 Sonnet이라, 에이전트에 검색을 맡기면 헤맨다."*
+
+**그 전제가 v15에서 이미 무너져 있었다.** 검색 backend를 duckduckgo → google로 바꾼
+이유가 바로 "duckduckgo는 결과 0건인 시나리오가 있었고 신호가 약했다"는 실측이었다.
+품질이 ReAct를 막던 이유였는데, 그 품질 문제를 v15가 해결한 뒤에도 결론만 남아 있었다.
+
+실측 결과 에이전트는 헤매지 않는다 — 요소 하나에 npm_search로 후보를 찾고,
+npm_package·github_repo_health로 사실을 모으고, 웹검색으로 method 후보를 조사하는
+멀티 툴 콜링이 안정적으로 돈다. 오히려 **너무 많이 검색하는 것**이 문제여서 예산으로
+막는다(아래).
 
 ### 동시성
 
 | 층 | 제한 |
 |---|---|
-| 요소 fan-out | LangGraph `Send`, 리듀스는 `Annotated[list, operator.add]` |
-| LLM 호출 | `Semaphore(4)` |
-| MCP 호출 | `Semaphore(8)` |
+| 요소 fan-out | `search` 노드 내부의 `asyncio.gather` |
+| MCP 호출 | `Semaphore(SCOUT_MCP_CONCURRENCY)` |
 | MCP 서버 | 자체 토큰버킷 레이트리미터 (이중 방어) |
+| 요소당 웹검색 | **5회** (승인 프롬프트 폭주 방지) |
+
+**`Send` fan-out을 쓰지 않는다.** `Send`를 쓰면 한 superstep에 여러 노드 키가 올라오는데
+`cli.py`의 스트림 루프는 `next(iter(update.items()))`로 첫 키만 읽고, 서브노드 이름에서
+`STAGE_LABELS`·`STAGE_ORDER.index()`가 `KeyError`/`ValueError`로 죽는다. 노드 하나를
+유지하면 CLI의 단계 배너 계약이 그대로 성립한다. `verify`에서 `Send`가 정말 필요해지면
+그때 스트림 루프를 함께 고친다.
+
+`create_react_agent`는 `checkpointer=False`로 컴파일한다 — 안 주면 바깥 그래프의
+`SqliteSaver`(동기 전용)를 물려받는데 이 에이전트는 `ainvoke`로 돈다.
 
 MCP 서버의 디스크 캐시(24h)가 있어서 재실행 시 HTTP는 대부분 캐시에서 나온다.
-같은 후보가 여러 요소에 등장할 때도 이득을 본다.
+
+---
+
+## 웹검색 사람 승인 (HITL)
+
+외부 검색엔진에는 LLM이 만든 **자유 서술 질의**가 그대로 나간다 — 사내 프로젝트
+맥락이 유출될 수 있다. 그래서 `web_search`만 사람 승인을 거친다. npm·PyPI·GitHub는
+패키지명·저장소명만 나가는 레지스트리 조회라 승인 대상이 아니다.
+
+```
+"websocket server node 2026"를 검색하려고 합니다 확인 바랍니다
+승인하시겠습니까? [y/N]: n
+거부 사유를 입력하세요: 고유명사·제품명을 질의에 넣지 마세요
+   → 거부 사유가 툴 결과로 에이전트에 돌아간다
+   → 에이전트가 질의를 고쳐 재요청 → 다시 승인 프롬프트
+```
+
+**거부하면 원본 툴을 호출하지 않는다 — egress가 일어나지 않는다.** 승인 문구만 띄우고
+요청이 나가버리면 이 기능은 장식이다. `test_search_approval.py`가 이 배선을 검사한다.
+
+| 상황 | 동작 |
+|---|---|
+| 승인 | 원본 툴 호출, 예산 1 차감 |
+| 거부 | egress 0. 거부 사유를 툴 결과로 반환 → 에이전트가 재질의 (예산 차감 없음) |
+| 거부 3회 | 이후 웹검색 차단 — 무한 재질의 방지 |
+| 예산 5회 소진 | 이후 프롬프트 없이 차단 |
+| 비대화형 (파이프·CI) | 그 실행 내내 차단 + `gaps` 기록. `--auto-approve-search`로 열 수 있다 |
+
+거부·차단은 전부 `gaps`에 남는다 — 근거가 없는 이유가 보고서에 드러나야 한다(불변식 12).
+
+### 왜 `interrupt()`가 아닌가
+
+LangGraph의 정석 HITL은 `interrupt()`다. 여기서는 `interview`가 이미 쓰는 **주입
+콜러블** 패턴(`Approve` + `NonInteractive`)을 따른다. 이유 셋이다.
+
+1. **파이프라인 전체가 async가 돼야 한다.** MCP 툴은 `func=None`인 async 전용이라
+   에이전트를 `ainvoke`로 돌려야 하고, interrupt를 CLI까지 올리려면 바깥 그래프도
+   `astream` + `AsyncSqliteSaver`가 된다 → `cli.py`·`graph.py`·`interview`의 실행
+   모델까지 다시 짜야 한다
+2. **`interrupt()`는 노드를 처음부터 재실행한다.** 거부→재질의 루프는 왕복마다
+   재실행이 붙는다
+3. **동시 interrupt가 여러 개면 id 맵 resume가 강제된다.** `create_react_agent`는
+   `version="v2"`에서 툴 콜마다 별도 태스크라, 스칼라 `Command(resume=)`는
+   `RuntimeError`가 난다
+
+**승인 콜러블이 나중에 `interrupt()`로 갈아끼울 이음매다** — 이 문서가
+`create_react_agent` 자리를 미리 남겨뒀던 것과 같은 방식으로 남긴다.
 
 ---
 
@@ -166,6 +236,8 @@ gaps       (slug, candidate, note)
 |---|---|
 | MCP 툴 조회 실패 (404, 타임아웃) | 예외를 던지지 않고 `gaps`에 기록하고 계속 |
 | GitHub 레이트리밋 (토큰 없음, 60req/h) | 위와 동일. 실행 초반에 경고 출력 |
+| **에이전트 루프 자체가 실패** | 그 요소만 `gaps`에 기록하고 나머지 요소는 계속 (`gather(return_exceptions=True)`) |
+| **웹검색 거부·차단** | `gaps`에 사유 기록. method 후보면 "웹검색 근거 없음"이 남는다 |
 | 특정 요소의 후보 0개 | 그 요소는 `picks`에 "후보 없음"으로 남기고 계속 |
 | 전체 후보 0개 | 조건 엣지로 조기 종료 |
 | 후보 이름 중복 (요소 간) | dossier는 후보명 기준으로 캐시해 재사용 |

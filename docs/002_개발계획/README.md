@@ -16,7 +16,7 @@
 | [02](STEP-02-interview.md) | 요청 구체화 → `refined_brief` | 1h | — |
 | [03](STEP-03-analyze.md) | 요소 도출 + `necessity` | 1h | — |
 | [04](STEP-04-mcp서버.md) | `egress` · `cache` · providers 4종 | 3.5h | **만든다** |
-| [05](STEP-05-search.md) | 후보 발견 + dossier 수집 | 1.5h | O |
+| [05](STEP-05-search.md) | 후보 발견 + dossier 수집 (ReAct + 웹검색 승인) | 2h | O |
 | [06](STEP-06-verify.md) | LLM-as-judge + grounding | 1.25h | — |
 | [07](STEP-07-evaluate.md) | 점수 계산 + judge 종합 점수 · 순위 | 1h | — |
 | [08](STEP-08-report.md) | 단일 HTML 렌더링 | 1.25h | — |
@@ -58,7 +58,7 @@ Day 1
 
 Day 2
 [x] STEP 04  MCP 서버    providers 4종 완료 · 단독 호출 확인
-[ ] STEP 05  search      candidates/facts/gaps 채워짐
+[x] STEP 05  search      ReAct 에이전트 + 웹검색 승인 게이트 · candidates/facts/gaps 채워짐
 [ ] STEP 06  verify      verdicts/citations + test_grounding 통과
 [ ] STEP 07  evaluate    scores 3기준 + overall + score_reason + margin
 [ ] STEP 08  report      브라우저에서 열리는 report.html

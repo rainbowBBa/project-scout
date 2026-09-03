@@ -51,7 +51,7 @@ analyze ─ 상위 3개 요소 ─▶ search ─── 후보 8~10 ──▶ ver
 
 | 단계 | LLM | 왜 |
 |---|---|---|
-| `search`의 2턴(실행) | 없음 | MCP 툴 호출은 코드가 한다. LLM은 질의를 만들고 결과를 정리할 뿐 |
+| `search`의 **사실 추출** | 없음 | 툴은 ReAct 에이전트가 고르지만, `Fact.value`는 `ToolMessage` 원본에서 코드가 파싱한다. LLM이 쓴 문장에서 사실을 만들면 dossier가 LLM 생성물이 된다 |
 | `grounding.py` | 없음 | 사실 대조는 SQL이다 |
 | `evaluate`의 `maturity`·`risk` | 없음 | "마지막 릴리스 1,690일 전"의 점수는 계산이지 판단이 아니다. **`overall`은 judge가 매긴다** |
 | `report` | 없음 | 구조화된 `scout.db`에서 렌더링. 프롬프트 튜닝 시간을 없앤 최대 절약 |

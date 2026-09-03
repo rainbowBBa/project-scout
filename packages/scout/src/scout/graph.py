@@ -14,22 +14,35 @@ from langgraph.graph import END, START, StateGraph
 
 from scout.stages import analyze as analyze_stage
 from scout.stages import interview as interview_stage
+from scout.stages import search as search_stage
 from scout.state import ScoutState
 
 if TYPE_CHECKING:
     from langchain_aws import ChatBedrockConverse
     from langgraph.checkpoint.base import BaseCheckpointSaver
 
+    from scout.stages.search import Approve
 
-def build_graph(llm: ChatBedrockConverse, checkpointer: BaseCheckpointSaver):
+
+def build_graph(
+    llm: ChatBedrockConverse,
+    checkpointer: BaseCheckpointSaver,
+    *,
+    approve: Approve = search_stage.default_approve,
+):
     graph = StateGraph(ScoutState)
     graph.add_node(
         "interview", lambda state: interview_stage.interview_node(state, llm=llm)
     )
     graph.add_node("analyze", lambda state: analyze_stage.analyze_node(state, llm=llm))
+    graph.add_node(
+        "search",
+        lambda state: search_stage.search_node(state, llm=llm, approve=approve),
+    )
     graph.add_edge(START, "interview")
     graph.add_edge("interview", "analyze")
-    graph.add_edge("analyze", END)
+    graph.add_edge("analyze", "search")
+    graph.add_edge("search", END)
     return graph.compile(checkpointer=checkpointer)
 
 

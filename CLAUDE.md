@@ -85,6 +85,16 @@ interview → analyze → search → verify → evaluate → report
     사실을 못 구한 것도 정보다
 12. **빈 섹션을 감추지 않는다** — 보고서에 "해당 없음 + 이유"를 쓴다
 
+### 에이전트 경계
+
+13. **`search`의 `Fact.value`는 `ToolMessage` 원본에서 나온다** — ReAct 에이전트는
+    *어떤 툴을 부를지만* 정한다. 에이전트가 요약한 문장을 사실로 저장하면 dossier가
+    LLM 생성물이 되어, **grounding은 통과하는데 사실은 환각인** 상태가 된다.
+    불변식 4가 지탱하던 주장이 뿌리에서 깨진다
+14. **`web_search`는 사람 승인을 거치고, 거부되면 원본 툴을 호출하지 않는다** —
+    승인 문구만 띄우고 요청이 나가면 이 기능은 장식이다. `test_search_approval`이
+    이 배선을 검사한다. npm·PyPI·GitHub는 패키지명만 나가므로 승인 대상이 아니다
+
 ---
 
 ## 코드 패턴
@@ -110,14 +120,22 @@ if parsed is None:  # 재시도까지 실패 — Verdict 처럼 필드 많은 �
 `overall`은 평균이 아니라는 반례 4개, `solves_it=false` 조건 3개처럼
 **구체적으로 무엇이 그 값이어야 하는지** 쓴다.
 
-### MCP 툴 호출 — 코드가 부른다
+### MCP 툴 호출 — `search`는 에이전트가 고른다
 
 ```python
-result = await tool.ainvoke({"name": candidate})  # LLM이 툴을 고르지 않는다
+agent = create_react_agent(llm, tools, prompt=..., checkpointer=False)  # 툴 선택은 LLM
+result = await agent.ainvoke({"messages": [...]}, config={"recursion_limit": 40})
+facts = facts_for_candidate(collect_tool_calls(result["messages"]), name, now)  # 값은 코드가
 ```
 
-`search` 2턴만 MCP를 쓰고, LLM은 질의를 만들고(1턴) 결과를 정리(3턴)한다.
-`langchain-mcp-adapters`가 `BaseTool`로 로드하므로 나중에 에이전트로 바꿀 여지는 남는다.
+`checkpointer=False`가 필수다 — 안 주면 바깥 그래프의 `SqliteSaver`(동기 전용)를
+물려받는데 이 에이전트는 `ainvoke`로 돈다.
+
+`search` 밖에서 툴이 필요하면 코드가 직접 부른다:
+
+```python
+result = await tool.ainvoke({"name": candidate})
+```
 
 ### fan-out
 
@@ -185,12 +203,13 @@ except ProviderError as e:
 |---|---|
 | `overall`을 `(maturity+risk)/2`로 계산 | 가중치 없는 가중 합산이다. judge가 판단해야 한다 (불변식 6) |
 | `maturity`도 LLM이 매기게 하기 | 이중 안전망이 깨진다. judge 하나에만 걸린다 (불변식 5) |
-| `search`를 ReAct 에이전트로 바꾸기 | DDG 품질이 나빠 Sonnet이 헤맨다. 3턴 파이프라인을 유지한다 |
+| `search`의 dossier를 에이전트 응답에서 만들기 | 사실이 LLM 생성물이 된다. `ToolMessage` 원본에서 코드가 뽑는다 (불변식 13) |
+| 승인 문구만 띄우고 툴은 그냥 호출하기 | 보안 기능이 장식이 된다. 거부는 원본 툴을 부르지 않아야 한다 (불변식 14) |
 | `report`에 LLM으로 요약 문장 생성 | 프롬프트 튜닝에 반나절이 사라진다. `solves_reason`을 인용한다 (불변식 7) |
 | `SCOUT_AWS_REGION` 같은 이름 만들기 | boto3 기본 자격 체인이 깨진다 (불변식 8) |
 | 조회 실패 시 예외 던지기 | 요소 하나가 전체를 죽인다. `gaps`에 기록한다 (불변식 11) |
 | 빈 섹션을 보고서에서 지우기 | 없는 걸 없다고 말하는 게 보고서의 일이다 (불변식 12) |
-| 테스트를 줄이기 | 4종은 커버리지가 아니라 **설계 주장의 증거**다 |
+| 테스트를 줄이기 | 5종은 커버리지가 아니라 **설계 주장의 증거**다 |
 | M0 확인 항목을 추측으로 채우기 | 모델 ID 형태 · DDG 패키지 이름 · boto3 버전은 `doctor`로 실측한다 |
 
 ---
@@ -217,7 +236,7 @@ uv sync                           # 전체 설치 (Python 3.14 자동 조달)
 uv sync --package scout-net-mcp   # MCP 서버만 (사내 DMZ 배포 리허설)
 uv run ruff check --fix . && uv run ruff format .
 uv run ty check                   # 정보용. 게이트 아님 — 오탐 많으면 끈다
-uv run pytest                     # 4종
+uv run pytest                     # 5종
 
 uv run scout                      # 기본 진입점 — 설명을 대화형으로 입력받아 전체 파이프라인을 돈다
 uv run scout doctor               # AWS 자격·리전·모델·동시쿼터 확인
@@ -238,8 +257,8 @@ uv run scout show <slug> verify
 - **STEP을 끝내면** `docs/002/README.md` 체크리스트를 갱신한다
 - **시간이 부족하면** [절단선](docs/001_기술스택-조사-에이전트-설계/06-범위와일정.md)
   순서대로 버린다. `web_search`와 grounding 검출은 버리지 않는다
-- **테스트 4종은 줄이지 않는다**
-  (`test_grounding` · `test_stale_regression` · `test_necessity_wiring` · `test_egress`)
+- **테스트 5종은 줄이지 않는다** (`test_grounding` · `test_stale_regression` ·
+  `test_necessity_wiring` · `test_egress` · `test_search_approval`)
 - **주석은 WHY만 남긴다.** 코드가 이미 보여주는 것(WHAT)을 말로 다시 풀어 쓰지
   않는다. 불변식의 이유·워크어라운드·놀랄 만한 동작처럼 코드만 보고는 알 수 없는
   것만 짧게 적는다. 긴 설계 논증(선택지 비교, 트레이드오프)은 코드가 아니라

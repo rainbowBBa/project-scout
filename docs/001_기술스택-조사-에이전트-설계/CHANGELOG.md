@@ -6,6 +6,79 @@
 
 ---
 
+## v17 (2026-09-03) — `search`: 3턴 파이프라인 → ReAct 에이전트 + 웹검색 사람 승인
+
+STEP-05를 구현하면서 설계 두 곳을 뒤집었다.
+
+### 1. ReAct 에이전트로 바꿨다 — 막던 이유가 이미 사라져 있었다
+
+v14까지 `2-search.md`는 "동작 — 3턴 파이프라인(에이전트 아님)"이었고
+`STEP-05-search.md`는 "ReAct 에이전트로 바꾸려는 충동을 참는다"까지 써놨다.
+근거는 하나였다 — *"DuckDuckGo 스니펫 품질이 나쁘고 모델이 Sonnet이라, 에이전트에
+검색을 맡기면 헤맨다."*
+
+**그 전제는 v15에서 이미 무너져 있었다.** v15가 backend를 duckduckgo → google로 바꾼
+이유가 바로 "duckduckgo는 결과 0건인 시나리오가 있었고 신호가 약했다"는 실측이었다.
+품질이 ReAct를 막던 유일한 이유였는데, 그 품질 문제를 해결한 뒤에도 결론만 남아 있었다.
+두 문서 다 탈출구는 미리 적어뒀었다 — *"나중에 `create_react_agent`로 바꿀 여지는
+남는다."*
+
+실측 결과 에이전트는 헤매지 않았다. 오히려 **한 요소에 웹검색을 15번** 하는 게
+문제여서 요소당 5회 예산으로 막았다.
+
+**사실 추출은 코드가 한다.** 에이전트는 어떤 툴을 부를지만 정하고, `Fact.value`는
+`ToolMessage` 원본 payload에서 코드가 파싱한다. 사실을 후보에 연결하는 것도 툴 호출
+인자와 후보명을 대조하는 코드다. 이 경계가 없으면 judge가 인용하는 dossier 자체가
+LLM 생성물이 되어 **grounding은 통과하는데 사실은 환각인** 상태가 된다 —
+불변식 4가 지탱하던 주장이 뿌리에서 깨진다. `CLAUDE.md`에 불변식 13으로 박았다.
+
+`Send` fan-out은 쓰지 않았다. `Send`를 쓰면 한 superstep에 여러 노드 키가 올라오는데
+`cli.py`의 스트림 루프가 `next(iter(update.items()))`로 첫 키만 읽고, 서브노드 이름에서
+`STAGE_LABELS`·`STAGE_ORDER.index()`가 죽는다. `search` 노드 하나가 내부에서
+`asyncio.gather`로 펼친다.
+
+구현 중 실측으로 드러난 것: `create_react_agent`를 **`checkpointer=False`로 컴파일해야
+한다.** 안 주면 바깥 그래프의 `SqliteSaver`(동기 전용)를 물려받는데 이 에이전트는
+`ainvoke`로 돌아 `"SqliteSaver does not support async methods"`로 죽는다.
+(그때도 파이프라인은 안 죽고 `gaps`에 기록됐다 — 불변식 11이 작동한 증거다.)
+
+### 2. `web_search`에 사람 승인 게이트를 넣었다 (신규)
+
+지금까지 설계 전체에 HITL 개념이 **없었다.** 외부 검색엔진에는 LLM이 만든 자유 서술
+질의가 그대로 나가므로 사내 프로젝트 맥락이 유출될 수 있다.
+
+```
+"<질의>"를 검색하려고 합니다 확인 바랍니다
+승인하시겠습니까? [y/N]
+```
+
+- **거부하면 원본 툴을 호출하지 않는다** — egress 0. 승인 문구만 띄우고 요청이 나가면
+  이 기능은 장식이다. `test_search_approval.py`가 이 배선을 검사한다 (불변식 14)
+- **거부 사유를 받아 에이전트에 돌려준다.** 에이전트가 사유를 반영해 질의를 고쳐
+  다시 승인을 요청한다. 실측: "고유명사·제품명을 넣지 마라"고 거부하자 이후 질의가
+  전부 일반 기술 용어로 바뀌었다
+- 거부 3회면 차단(무한 재질의 방지), 요소당 승인 5회 예산, 비대화형이면 차단
+  (`--auto-approve-search`로 열 수 있다)
+- 승인 대상은 `web_search`뿐이다. npm·PyPI·GitHub는 패키지명·저장소명만 나가는
+  레지스트리 조회다
+
+**`interrupt()`를 쓰지 않았다.** LangGraph 정석 HITL이지만 (1) MCP 툴이 async 전용이라
+바깥 그래프까지 `astream`+`AsyncSqliteSaver`로 다시 짜야 하고, (2) `interrupt()`는 노드를
+처음부터 재실행하는데 거부→재질의 루프는 왕복마다 그 비용이 붙고, (3)
+`create_react_agent`는 툴 콜마다 별도 태스크라 동시 interrupt에 id 맵 resume가 강제된다.
+대신 `interview`가 이미 쓰는 주입 콜러블 패턴(`Approve` + `NonInteractive`)을 따랐다 —
+**이 콜러블이 나중에 `interrupt()`로 갈아끼울 이음매다.**
+
+### 함께 바뀐 것
+
+- 테스트 **4종 → 5종** (`test_search_approval.py`). 성공 기준에 6-1번 추가
+- `stages/README.md`의 "어느 단계에 LLM이 없는지" 표에서 `search의 2턴(실행)` 행이
+  거짓이 되어 "`search`의 **사실 추출**"로 교체
+- `CLAUDE.md` 불변식 13·14 신설, 함정 표 2행 교체, 코드 패턴 절 갱신
+- STEP-05 시간 1.5h → 2h
+
+---
+
 ## v16 (2026-09-03) — Python 3.12 → 3.14
 
 `.python-version`·두 패키지의 `requires-python`을 3.12에서 3.14로 올렸다.

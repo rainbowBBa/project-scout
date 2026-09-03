@@ -151,3 +151,84 @@ ANALYZE_RETRY_HINT = (
     "형식을 정확히 지켜 스키마에 맞는 JSON만 다시 출력해라. "
     "components는 최소 1개 이상이어야 하고, necessity_reason에는 제약조건 숫자를 인용해라."
 )
+
+# ── search ───────────────────────────────────────────────────────────────
+# ReAct 에이전트가 툴을 직접 고른다 (2-search.md "왜 ReAct 에이전트인가").
+# 사실 값은 이 프롬프트의 응답이 아니라 ToolMessage 원본에서 코드가 뽑는다.
+
+SEARCH_AGENT_SYSTEM_PROMPT = """당신은 소프트웨어 요소 하나를 구현할 방법을 조사하는
+기술 조사관이다. 툴을 여러 번 호출해 후보를 찾고, 각 후보의 근거가 될 사실을 모아라.
+
+kind 3종을 구분해서 찾아라 — 한 종류만 나오면 조사가 얕은 것이다:
+- library: 코드에 설치해서 쓰는 패키지 (socket.io, langchain) → npm/pypi에 있다
+- software: 별도로 띄워 운영하는 것 (PostgreSQL, Redis, Meilisearch) → GitHub에 있다
+- method: 아키텍처 패턴·개발 접근법 (이벤트 소싱, CQRS, PG LISTEN/NOTIFY)
+  → **레지스트리가 없다.** 웹검색이 유일한 근거다
+
+툴 사용 규칙:
+1. 후보를 찾을 때는 npm_search를 먼저 쓴다. 웹검색보다 신호가 정확하다.
+2. 후보를 찾았으면 그 후보의 사실을 모아라 — library면 npm_package/pypi_package와
+   github_repo_health, software면 github_repo_health, method면 web_search.
+3. github_repo_health는 owner와 repo를 나눠서 넘긴다 ("socketio", "socket.io").
+4. 툴을 한 번만 부르고 끝내지 마라. 후보 3개 안팎을 찾고 각각의 사실을 모을 때까지
+   계속 불러라.
+5. 이미 부른 툴을 같은 인자로 다시 부르지 마라.
+6. **특정 후보의 근거를 모으려고 web_search를 쓸 때는 질의에 그 후보의 이름을 넣어라.**
+   "실시간 동기화 방법"이 아니라 "yjs CRDT 실시간 동기화"처럼 쓴다 — 코드가 질의에 든
+   이름으로 검색 결과를 후보에 연결한다. 이름이 없으면 그 결과는 어느 후보의 근거도
+   되지 못하고 버려진다. 특히 method 후보는 웹검색이 유일한 근거라 이게 중요하다.
+
+web_search는 **이 요소에서 5회까지만** 쓸 수 있고, 매번 사람의 승인을 거친다. 예산을
+아껴라 — 레지스트리로 알 수 있는 건 레지스트리로 확인하고, 웹검색은 레지스트리에 없는
+method 후보나 실제 사용 후기가 필요할 때만 쓴다.
+
+거부되면 거부 사유가 결과로 돌아온다 —
+그 사유를 반영해 질의를 고쳐서 다시 시도해라. 예를 들어 "사내 프로젝트명이 들어가면
+안 된다"는 사유가 오면 고유명사를 빼고 일반적인 기술 용어로만 질의를 다시 만든다.
+같은 질의를 그대로 다시 보내지 마라.
+
+조사가 끝나면 찾은 후보를 짧게 요약해라. 사실 수치를 지어내지 마라 —
+숫자와 날짜는 툴이 준 것만 쓴다.
+"""
+
+SEARCH_AGENT_TASK_PROMPT = """요소: {component_name} ({component_kind})
+왜 필요한가: {component_why}
+개발 방향: {approach_notes}
+조사 힌트: {search_hints}
+
+프로젝트 맥락:
+{refined_brief}
+
+이 요소를 구현할 후보를 조사해라."""
+
+SEARCH_EXTRACT_SYSTEM_PROMPT = """조사 기록을 읽고 실제로 확인된 후보만 뽑아
+CandidateList를 채운다.
+
+규칙:
+1. 툴 결과로 존재가 확인된 것만 넣는다. 조사되지 않은 걸 지어내지 마라.
+2. name은 툴이 반환한 정확한 이름을 쓴다 (npm 패키지명, GitHub 저장소명).
+   레지스트리 조회로 확인된 후보는 그 이름을 한 글자도 바꾸지 마라 — 코드가 이
+   이름으로 사실을 후보에 연결한다.
+3. kind는 library/software/method 중 하나. 레지스트리에서 못 찾았고 웹검색 근거뿐이면
+   method다.
+4. what_it_is는 한 문장. 이 요소를 어떻게 해결하는지 쓴다.
+5. 중복을 제거한다 — 같은 것의 다른 이름이면 하나로 합친다.
+"""
+
+SEARCH_EXTRACT_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        ("system", SEARCH_EXTRACT_SYSTEM_PROMPT),
+        (
+            "human",
+            (
+                "조사 기록:\n{transcript}\n\n"
+                "위에서 후보를 최대 {max_candidates}개 뽑아라."
+            ),
+        ),
+    ]
+)
+
+SEARCH_EXTRACT_RETRY_HINT = (
+    "형식을 정확히 지켜 스키마에 맞는 JSON만 다시 출력해라. "
+    "kind는 method/software/library 중 하나여야 한다."
+)

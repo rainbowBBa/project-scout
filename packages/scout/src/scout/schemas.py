@@ -49,6 +49,20 @@ class Candidate(BaseModel):
     dossier_gaps: list[str] = Field(default_factory=list)
 
 
+class CandidateDraft(BaseModel):
+    """에이전트가 뽑는 후보. dossier는 코드가 ToolMessage에서 채운다 — LLM이 쓴 문장에서
+    사실을 만들면 judge가 인용할 dossier 자체가 LLM 생성물이 된다 (불변식 4).
+    """
+
+    name: str
+    kind: Literal["method", "software", "library"]
+    what_it_is: str
+
+
+class CandidateList(BaseModel):
+    candidates: list[CandidateDraft]
+
+
 class Verdict(BaseModel):
     candidate: str
     component: str
