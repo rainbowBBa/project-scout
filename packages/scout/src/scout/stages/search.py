@@ -273,6 +273,7 @@ async def _search_component(
         component_kind=component.kind,
         role_in_design=component.role_in_design,
         decision_question=component.decision_question,
+        alternatives="\n".join(f"- {a}" for a in component.alternatives) or "- (없음)",
         constraints="\n".join(f"- {c}" for c in component.constraints) or "- (없음)",
         approach_notes=component.approach_notes,
         search_hints=", ".join(component.search_hints) or "(없음)",
@@ -294,6 +295,8 @@ async def _search_component(
         llm.with_structured_output(CandidateList, include_raw=True),
         {
             "transcript": build_transcript(calls, messages),
+            "alternatives": "\n".join(f"- {a}" for a in component.alternatives)
+            or "- (없음)",
             "max_candidates": max_candidates,
         },
         SEARCH_EXTRACT_RETRY_HINT,
@@ -318,6 +321,35 @@ async def _search_component(
             )
         )
     return candidates, truncated
+
+
+def uncovered_alternatives(
+    component: Component, found: Sequence[Candidate]
+) -> list[str]:
+    """design이 뽑은 보기가 후보에 하나도 안 걸리면 남긴다.
+
+    실측에서 질문이 "Next.js vs Vite+React"였는데 **Next.js가 후보에 없었고**, 그 사실이
+    어디에도 안 남아 보고서만 보면 알 수 없었다 (CHANGELOG v26). 조용히 빠진 보기는
+    "비교했다"는 결론을 거짓으로 만든다 — 빈 search_hints를 남기는 것과 같은 성격이다.
+
+    이름은 느슨하게 맞춘다 — "Server-Sent Events"라는 보기가 `sse-starlette` 후보로
+    돌아오는 식이라 정확 일치로는 거의 다 미커버로 잡힌다.
+    """
+    haystack = " ".join(f"{c.name} {c.what_it_is}" for c in found).lower()
+    missing = [
+        alternative
+        for alternative in component.alternatives
+        if not any(
+            word in haystack
+            for word in alternative.lower().replace("+", " ").split()
+            if len(word) > 2
+        )
+    ]
+    return [
+        f"'{component.name}': 보기 '{alternative}'가 후보에 오르지 못했다 — "
+        "이 보기는 비교되지 않았다"
+        for alternative in missing
+    ]
 
 
 async def _run_search(
@@ -352,6 +384,7 @@ async def _run_search(
             gaps.append(f"'{component.name}' 조사 실패: {result}")
             continue
         found, truncated = result
+        gaps.extend(uncovered_alternatives(component, found))
         if truncated:
             gaps.append(
                 f"'{component.name}': 툴 탐색이 한도"

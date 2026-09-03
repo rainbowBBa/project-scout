@@ -289,6 +289,7 @@ def _print_stage_summary(node_name: str, node_output: dict, slug: str) -> None:
                 f"    [{c.necessity}] {c.name} ({c.kind}) — priority {c.priority}"
             )
             typer.echo(f"      정할 것: {c.decision_question}")
+            typer.echo(f"      보기: {' vs '.join(c.alternatives) or '(없음)'}")
             typer.echo(f"      힌트: {', '.join(c.search_hints) or '(없음)'}")
     elif node_name == "search":
         candidates = node_output["candidates"]

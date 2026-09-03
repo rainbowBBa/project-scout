@@ -175,11 +175,33 @@ DESIGN_EXTRACT_SYSTEM_PROMPT = """조사 기록과 프로젝트 명세를 읽고
    "Elasticsearch 도입"이 아니라 "메시지 전문검색"처럼 써라. 이름에 라이브러리가
    등장하면 그 시점부터 편향이 시작된다. 구체적인 기술 어휘는 search_hints에 넣는다.
 4. role_in_design: 이 설계에서 이 조각이 맡는 역할.
-5. decision_question: **무엇을 정해야 하는가**를 질문으로. role_in_design을 베끼지 마라.
+5. decision_question: **무엇을 고를 것인가**를 질문으로. role_in_design을 베끼지 마라.
    "200 동시 연결·재연결·룸을 3인 팀이 운영 부담 없이 쓸 수 있는 전달 계층은 무엇인가"
-6. constraints: 설계가 강제하는 선택 조건. 이걸 못 지키는 후보는 찾아도 의미가 없다.
+6. alternatives: 그 질문에서 **실제로 고를 보기**. 아래 "★ 결정 지점은 교체 단위다"를 봐라
+7. constraints: 설계가 강제하는 선택 조건. 이걸 못 지키는 후보는 찾아도 의미가 없다.
    refined_brief의 제약(언어·인원·기간·규모)에서 나와야 한다.
-7. priority는 1이 가장 중요하다. 이 프로젝트의 심장이 무엇인지 판단해서 매겨라.
+8. priority는 1이 가장 중요하다. 이 프로젝트의 심장이 무엇인지 판단해서 매겨라.
+
+### ★ 결정 지점은 **교체 단위**다 — alternatives에 고를 보기를 적는다
+
+decision_question은 "무엇을 고를 것인가"이고, alternatives에 그 보기를 적는다.
+**보기를 2개 못 적으면 그건 결정 지점이 아니다.**
+
+  ✘ "LangChain 에이전트와 회사 AI API를 어떻게 연동할 것인가?"      어떻게 = 선택이 아니다
+  ✘ "에러 응답의 세부도를 어느 수준으로 제공할 것인가?"             정도 = 선택이 아니다
+  ✘ "입력 스키마를 어떻게 정의할 것인가?"                          우리가 설계할 것
+  ✔ "토큰 단위 스트리밍을 무엇으로 할 것인가?"
+       alternatives: ["Server-Sent Events", "WebSocket"]
+  ✔ "프론트엔드 프레임워크는 무엇으로 할 것인가?"
+       alternatives: ["Next.js", "Vite + React", "SvelteKit"]
+
+교체 단위는 **아키텍처 패턴 · 저장소 · 런타임·프레임워크 · 라이브러리 · 배포 방식**이다.
+**기능은 결정 지점이 아니다** — "페르소나 생성 에이전트"는 만들 기능이고, 거기서 고를
+것은 "에이전트 오케스트레이션 라이브러리"다. 기능 자체는 architecture가 담는다.
+"에러 처리를 어느 수준으로 할 것인가" 같은 설계 판단은 approach_notes에 쓴다.
+
+alternatives를 2개 못 적겠으면 needs_comparison=false로 두고 이유를 써라.
+**억지로 채우지 마라** — 억지 후보가 1위로 올라와 조사 전체가 무의미해진다.
 
 ### ★ search_hints — 영어 기술 어휘로 쓴다. 비우지 마라
 
@@ -193,6 +215,11 @@ DESIGN_EXTRACT_SYSTEM_PROMPT = """조사 기록과 프로젝트 명세를 읽고
 
 레지스트리에서 확인된 이름이 조사 기록에 있으면 그 이름을 그대로 쓴다.
 
+**힌트의 층을 alternatives에 맞춘다.** 각 대안을 **찾을 수 있는 말**이어야 한다 —
+대안이 패턴이면 패턴명, 패키지면 패키지명. 대안이 ["SSE", "WebSocket"]인데 힌트가
+패키지 검색어만이면 다음 단계가 패키지 후보만 가져오고, SSE도 WebSocket도 후보에
+없는 채로 순위가 나온다.
+
 ### ★ needs_comparison — "필요한가"와 "지금 정해야 하는가"는 다르다
 
 necessity가 "이게 필요한가"라면 needs_comparison은 "**이걸 비교해서 골라야 하는가**"다.
@@ -204,6 +231,10 @@ no_comparison_reason에 근거를 써라 — 조사 예산을 쓰지 않으면�
                         언어 선택은 이미 닫힌 결정이다
     "배포·운영"       — 사내 표준 배포 파이프라인을 쓴다고 인터뷰에서 나왔다
     "LLM 제공자"      — Bedrock 계정이 이미 있다고 명시돼 있다
+
+**refined_brief가 라이브러리·프레임워크·언어를 지정했으면 닫힌 결정이다.**
+"lang chain을 이용했으면 좋겠어"가 있으면 alternatives는 그것뿐이고
+needs_comparison=false다. 사용자가 정해준 답을 결론으로 돌려주면 정보가 0이다.
 
 전부 true로 주면 잘못된 것이다. refined_brief가 이미 정해놓은 것이 무엇인지 먼저 찾아라.
 
@@ -241,7 +272,8 @@ DESIGN_EXTRACT_PROMPT = ChatPromptTemplate.from_messages(
 DESIGN_EXTRACT_RETRY_HINT = (
     "형식을 정확히 지켜 스키마에 맞는 JSON만 다시 출력해라. "
     "components는 최소 1개 이상이고, search_hints는 비어 있으면 안 되며 영어 기술 "
-    "어휘여야 한다. necessity_reason에는 제약조건 숫자를 인용해라."
+    "어휘여야 한다. needs_comparison=true인 결정 지점은 alternatives가 2개 이상이어야 "
+    "한다. necessity_reason에는 제약조건 숫자를 인용해라."
 )
 
 # ── search ───────────────────────────────────────────────────────────────
@@ -294,6 +326,8 @@ kind 3종을 구분해서 찾아라 — **한 종류만 나오면 조사가 얕�
 SEARCH_AGENT_TASK_PROMPT = """요소: {component_name} ({component_kind})
 설계 내 역할: {role_in_design}
 ★ 정할 것: {decision_question}
+★ 비교할 보기 — 설계 단계가 뽑았다. **각각을 후보로 올려라**:
+{alternatives}
 ★ 만족해야 하는 조건 (못 지키는 후보는 의미가 없다):
 {constraints}
 개발 방향: {approach_notes}
@@ -303,7 +337,11 @@ SEARCH_AGENT_TASK_PROMPT = """요소: {component_name} ({component_kind})
 프로젝트 맥락:
 {refined_brief}
 
-"정할 것"에 답할 후보를 조사해라. 조사 힌트를 질의의 출발점으로 쓴다."""
+"정할 것"에 답할 후보를 조사해라. 조사 힌트를 질의의 출발점으로 쓴다.
+
+"비교할 보기"는 **최소**다 — 하나도 빠뜨리지 마라. 레지스트리에 없는 보기(아키텍처
+패턴·프로토콜처럼)는 web_search로 근거를 모은다. 조사하다 더 나은 것을 찾으면
+추가해도 된다."""
 
 SEARCH_EXTRACT_SYSTEM_PROMPT = """조사 기록을 읽고 실제로 확인된 후보만 뽑아
 CandidateList를 채운다.
@@ -317,6 +355,10 @@ CandidateList를 채운다.
    method다.
 4. what_it_is는 한 문장. 이 요소를 어떻게 해결하는지 쓴다.
 5. 중복을 제거한다 — 같은 것의 다른 이름이면 하나로 합친다.
+6. ★ **"비교할 보기"에 있던 것은 빠뜨리지 마라.** 그것이 레지스트리 패키지가 아니면
+   kind=method로 넣는다 — 실측에서 "SSE vs WebSocket"을 물어놓고 후보가 패키지 3개로만
+   와서, 둘 다 순위에 없는 채로 결론이 나왔다. 다만 툴 결과에 근거가 전혀 없는 보기는
+   지어내지 말고 빼라 (규칙 1이 우선이다).
 """
 
 SEARCH_EXTRACT_PROMPT = ChatPromptTemplate.from_messages(
@@ -326,6 +368,7 @@ SEARCH_EXTRACT_PROMPT = ChatPromptTemplate.from_messages(
             "human",
             (
                 "조사 기록:\n{transcript}\n\n"
+                "비교할 보기 (설계 단계가 뽑았다):\n{alternatives}\n\n"
                 "위에서 후보를 최대 {max_candidates}개 뽑아라."
             ),
         ),

@@ -57,7 +57,11 @@ class Component(BaseModel):
     name: str
     kind: Literal["feature", "data", "infrastructure", "integration", "ops"]
     role_in_design: str
+    # "무엇을 고를 것인가". "어떻게 구성할 것인가"는 선택이 아니다 (1-design.md)
     decision_question: str
+    # 이 결정 지점에서 실제로 고를 보기. 2개 미만이면 고를 것이 없다는 뜻이라
+    # design이 코드로 needs_comparison=false로 내린다 (불변식 18)
+    alternatives: StrList = Field(default_factory=list)
     constraints: StrList = Field(default_factory=list)
     # necessity("필요한가")와 다른 축이다 — "지금 비교해서 골라야 하는가".
     # false면 설계에서 이미 닫힌 결정이라 search에 가지 않는다 (불변식 17)

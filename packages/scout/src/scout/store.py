@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS components (
     kind TEXT NOT NULL,
     role_in_design TEXT NOT NULL,
     decision_question TEXT NOT NULL,
+    alternatives_json TEXT NOT NULL,
     constraints_json TEXT NOT NULL,
     needs_comparison INTEGER NOT NULL,
     no_comparison_reason TEXT NOT NULL,
@@ -251,11 +252,12 @@ def upsert_components(
         conn.executemany(
             """
             INSERT INTO components (
-                slug, name, kind, role_in_design, decision_question, constraints_json,
+                slug, name, kind, role_in_design, decision_question,
+                alternatives_json, constraints_json,
                 needs_comparison, no_comparison_reason,
                 necessity, necessity_reason, priority, approach_notes, search_hints_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -264,6 +266,7 @@ def upsert_components(
                     c.kind,
                     c.role_in_design,
                     c.decision_question,
+                    json.dumps(c.alternatives, ensure_ascii=False),
                     json.dumps(c.constraints, ensure_ascii=False),
                     int(c.needs_comparison),
                     c.no_comparison_reason,
@@ -291,6 +294,7 @@ def get_components(slug: str, *, runs_dir: str | None = None) -> list[Component]
                 kind=r["kind"],
                 role_in_design=r["role_in_design"],
                 decision_question=r["decision_question"],
+                alternatives=json.loads(r["alternatives_json"]),
                 constraints=json.loads(r["constraints_json"]),
                 needs_comparison=bool(r["needs_comparison"]),
                 no_comparison_reason=r["no_comparison_reason"],

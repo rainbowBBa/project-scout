@@ -190,6 +190,7 @@ websockets`로 왔고, **SSE도 WebSocket도 후보에 없었다.**
 
 규칙을 프롬프트 희망이 아니라 코드가 강제하는 이유는 [08-설정](../08-설정.md)
 "SCOUT_MODEL_ID"와 같다 — 지시 준수가 약한 모델에서도 유지돼야 한다.
+이것이 **불변식 18**이고 `tests/test_decision_points.py`가 검사한다.
 
 ---
 

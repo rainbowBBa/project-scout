@@ -10,8 +10,8 @@
 그래서 여기서는 `store.upsert_facts`를 부르지 않는다 — `test_design_no_facts`가 검사한다.
 
 걸러진 것까지 전부 저장하되, 다음 단계로는 **비교가 필요하고**(`needs_comparison`)
-`necessity`가 essential/valuable인 것 중 priority 상위 max_components개만 넘긴다
-("도출과 통과를 분리한다").
+`necessity`가 essential/valuable이고 **고를 보기가 2개 이상**(`alternatives`)인 것 중
+priority 상위 max_components개만 넘긴다 ("도출과 통과를 분리한다").
 """
 
 from __future__ import annotations
@@ -45,6 +45,8 @@ if TYPE_CHECKING:
     from scout.state import ScoutState
 
 _PASSING_NECESSITY = {"essential", "valuable"}
+# 결정 지점은 "무엇을 고를 것인가"다. 보기가 이만큼 없으면 고를 것이 없다 (불변식 18)
+_MIN_ALTERNATIVES = 2
 
 
 def _prompt_input(interview: Interview) -> dict[str, str]:
@@ -92,24 +94,60 @@ async def run_design(
     return design, truncated
 
 
+def close_undecidable(components: list[Component]) -> list[Component]:
+    """고를 보기가 없는 결정 지점을 **코드가** 닫힌 결정으로 내린다 (불변식 18).
+
+    프롬프트에 반례를 박아도 모델이 `needs_comparison=true`로 주는 것을 막지 못한다 —
+    실측에서 "…를 어떻게 구성할 것인가"(선택이 아닌 질문)가 통과해 `search`가 억지
+    후보를 만들었고, 질문에 답하지 않는 후보가 1위로 올라왔다 (CHANGELOG v26).
+
+    조용히 버리지 않는다 — 여기서 채운 `no_comparison_reason`이 보고서의 "설계에서
+    이미 정해진 부분"에 실려 **왜 비교하지 않았는지가 보인다** (불변식 12).
+    반환값은 내려진 것들 — 호출자가 `gaps`에 남긴다.
+    """
+    closed: list[Component] = []
+    for c in components:
+        if not c.needs_comparison or len(c.alternatives) >= _MIN_ALTERNATIVES:
+            continue
+        only = c.alternatives[0] if c.alternatives else ""
+        c.needs_comparison = False
+        c.no_comparison_reason = (
+            f"설계에서 이미 정해졌다 — {only}뿐이라 비교할 대안이 없다"
+            if only
+            else "고를 보기가 제시되지 않았다 — 비교할 선택이 아니라 설계 판단이다"
+        )
+        closed.append(c)
+    return closed
+
+
 def select_passing_components(
     components: list[Component], max_components: int
 ) -> list[Component]:
-    """search로 넘길 상위 결정 지점만 고른다 — 필터가 둘이다.
+    """search로 넘길 상위 결정 지점만 고른다 — 필터가 **셋**이다.
 
-    `necessity`가 essential/valuable이고 **비교가 필요한** 것 중 priority가 낮은
-    (=중요한) 순. 걸러진 것도 components 테이블에는 전부 남는다 — 여기서 자르는 건
-    상태로 넘기는 부분집합일 뿐이다.
+    `necessity`가 essential/valuable이고 **비교가 필요하고**(`needs_comparison`)
+    **고를 보기가 2개 이상**인 것 중 priority가 낮은(=중요한) 순. 걸러진 것도
+    components 테이블에는 전부 남는다 — 여기서 자르는 건 상태로 넘기는 부분집합일 뿐이다.
+
+    세 번째 축은 `close_undecidable`이 이미 내렸으므로 보통 중복이지만, 그 호출을
+    빼먹거나 저장된 결정 지점을 `--from search`로 다시 읽을 때 마지막 방어가 된다.
     """
     passing = [
         c
         for c in components
-        if c.necessity in _PASSING_NECESSITY and c.needs_comparison
+        if c.necessity in _PASSING_NECESSITY
+        and c.needs_comparison
+        and len(c.alternatives) >= _MIN_ALTERNATIVES
     ]
     return sorted(passing, key=lambda c: c.priority)[:max_components]
 
 
-def _record_gaps(slug: str, design: Design, selected: list[Component]) -> None:
+def _record_gaps(
+    slug: str,
+    design: Design,
+    selected: list[Component],
+    closed: list[Component],
+) -> None:
     if not design.components:
         store.add_gap(
             slug, "design", "결정 지점이 도출되지 않음 — 설명이 너무 짧거나 모호함"
@@ -125,6 +163,13 @@ def _record_gaps(slug: str, design: Design, selected: list[Component]) -> None:
     ):
         store.add_gap(
             slug, "design", "necessity가 전부 essential/valuable — 걸러낸 것이 없다"
+        )
+    for component in closed:
+        store.add_gap(
+            slug,
+            "design",
+            f"'{component.name}': {component.no_comparison_reason} "
+            f"(정할 것: {component.decision_question})",
         )
     # 힌트가 비면 search가 한국어 추상어로 npm_search를 부르게 된다 (불변식 16).
     # 파이프라인은 그래도 돌기 때문에 조용히 회귀하지 않도록 기록으로 남긴다.
@@ -177,12 +222,14 @@ def design_node(
     # 쓰기 전에 이전 실행의 산출물을 비운다 (store.clear_stage_output 참고)
     store.clear_stage_output(slug, "design")
     store.upsert_design(slug, design.architecture)
+    # 저장 전에 내린다 — DB에 내려간 상태가 들어가야 report가 이유를 렌더링한다
+    closed = close_undecidable(design.components)
     store.upsert_components(slug, design.components)
 
     selected = select_passing_components(
         design.components, state.get("max_components", 3)
     )
-    _record_gaps(slug, design, selected)
+    _record_gaps(slug, design, selected, closed)
     if truncated:
         store.add_gap(
             slug,
