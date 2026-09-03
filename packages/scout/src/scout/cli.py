@@ -24,7 +24,7 @@ app = typer.Typer()
 
 # 파이프라인 6단계 전체 이름. 아직 구현된 노드만 IMPLEMENTED_STAGES에 있다 — STEP이 끝날 때마다 하나씩 늘어난다.
 STAGE_ORDER = ["interview", "analyze", "search", "verify", "evaluate", "report"]
-IMPLEMENTED_STAGES = ["interview", "analyze", "search", "verify", "evaluate"]
+IMPLEMENTED_STAGES = ["interview", "analyze", "search", "verify", "evaluate", "report"]
 STAGE_LABELS = {
     "interview": "인터뷰",
     "analyze": "분석",
@@ -224,6 +224,7 @@ def _run_pipeline(
 
     typer.echo(f"\n[{STAGE_LABELS['interview']}] 단계를 시작합니다.")
     stopped_early = False
+    report_path: str | None = None
     approve = (
         search_stage.auto_approve
         if auto_approve_search
@@ -239,12 +240,14 @@ def _run_pipeline(
             node_name, node_output = next(iter(update.items()))
             _print_stage_summary(node_name, node_output)
             typer.echo(f"[{STAGE_LABELS[node_name]}] 단계를 종료합니다.")
+            if node_name == "report":
+                report_path = node_output["report_path"]
             if stop_after is not None and node_name == stop_after.value:
                 stopped_early = True
                 break
             _maybe_print_next_stage_banner(node_name)
 
-    _print_pipeline_footer(slug, stopped_early=stopped_early)
+    _print_pipeline_footer(slug, stopped_early=stopped_early, report_path=report_path)
 
 
 def _print_stage_summary(node_name: str, node_output: dict) -> None:
@@ -310,6 +313,19 @@ def _print_stage_summary(node_name: str, node_output: dict) -> None:
                     f"        {score.candidate} overall {score.overall} — {score.score_reason}"
                 )
             typer.echo(f"      2위 참고: {pick.runner_up_note}")
+    elif node_name == "report":
+        summary = node_output["report_summary"]
+        for row in summary["stack"]:
+            margin_note = "  (근접)" if row["margin"] == "close" else ""
+            overall = "-" if row["overall"] is None else str(row["overall"])
+            typer.echo(
+                f"  {row['component']:<18} {row['candidate']:<20} {overall}{margin_note}"
+            )
+        typer.echo(
+            f"\n  걸러낸 요소 {summary['filtered_count']}개 · "
+            f"탈락 후보 {summary['rejected_count']}개 · "
+            f"grounding 위반 {summary['grounding_violations_total']}건"
+        )
 
 
 def _maybe_print_next_stage_banner(node_name: str) -> None:
@@ -321,9 +337,13 @@ def _maybe_print_next_stage_banner(node_name: str) -> None:
         typer.echo(f"\n[{STAGE_LABELS[next_stage]}] 단계를 시작합니다.")
 
 
-def _print_pipeline_footer(slug: str, *, stopped_early: bool) -> None:
+def _print_pipeline_footer(
+    slug: str, *, stopped_early: bool, report_path: str | None
+) -> None:
     typer.echo(f"\n[OK] slug={slug}")
-    if stopped_early:
+    if report_path is not None:
+        typer.echo(f"리포트: {report_path}")
+    elif stopped_early:
         typer.echo(
             f"지정한 단계까지 실행을 마쳤습니다. `scout show {slug} <단계>`로 결과를 볼 수 있습니다."
         )

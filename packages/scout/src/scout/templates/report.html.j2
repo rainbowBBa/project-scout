@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>{{ description or slug }} — project-scout 리포트</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --panel: #ffffff;
+    --text: #1c1c1a;
+    --muted: #6b6b64;
+    --border: #e1e0da;
+    --accent: #3a6b52;
+    --accent-soft: #e3ede7;
+    --warn: #8a4a1f;
+    --warn-soft: #f6e6d8;
+    --bad: #7a2b2b;
+    --bad-soft: #f3e0df;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17181a;
+      --panel: #212226;
+      --text: #e9e8e3;
+      --muted: #9a9a92;
+      --border: #34353a;
+      --accent: #7fbf9d;
+      --accent-soft: #223027;
+      --warn: #d8a15c;
+      --warn-soft: #33291b;
+      --bad: #d98b8b;
+      --bad-soft: #362323;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem 1rem 4rem;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", "Noto Sans KR", sans-serif;
+    line-height: 1.55;
+  }
+  main { max-width: 880px; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin: 0 0 0.4rem; }
+  h2 { font-size: 1.15rem; margin: 0 0 0.8rem; }
+  h3 { font-size: 1rem; margin: 1.2rem 0 0.4rem; }
+  .subtitle { color: var(--muted); margin: 0 0 1.5rem; white-space: pre-wrap; }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.25rem;
+  }
+  .banner {
+    background: var(--warn-soft);
+    color: var(--warn);
+    border-radius: 8px;
+    padding: 0.6rem 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+  }
+  .empty { color: var(--muted); font-style: italic; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.4rem 0.5rem; vertical-align: top; }
+  thead th { color: var(--muted); font-weight: 500; font-size: 0.85rem; border-bottom: 1px solid var(--border); }
+  tbody tr + tr td { border-top: 1px solid var(--border); }
+  .score-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.2rem 0; }
+  .score-label { min-width: 4.5rem; font-size: 0.85rem; color: var(--muted); }
+  .bar-track {
+    flex: 1 1 auto;
+    max-width: 220px;
+    height: 0.6rem;
+    background: var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .bar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+  .score-num { min-width: 1.2rem; font-weight: 600; }
+  .score-reason { color: var(--muted); font-size: 0.85rem; margin: 0.1rem 0 0.6rem; }
+  .badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    padding: 0.05rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .badge-computed { color: var(--accent); border-color: var(--accent); }
+  .badge-judged { color: var(--text); border-color: var(--text); }
+  .badge-unavailable { color: var(--muted); }
+  .badge-close { color: var(--warn); border-color: var(--warn); }
+  .badge-violation, .badge-low { color: var(--bad); border-color: var(--bad); }
+  .candidate-block { padding: 0.7rem 0; }
+  .candidate-block + .candidate-block { border-top: 1px dashed var(--border); }
+  .candidate-block.rejected { opacity: 0.7; }
+  .candidate-name { font-weight: 600; }
+  .candidate-name.rejected { text-decoration: line-through; }
+  .quote { margin: 0.2rem 0 0.4rem; }
+  .quote::before { content: "↳ "; color: var(--muted); }
+  ul.plain { margin: 0.2rem 0; padding-left: 1.2rem; }
+  details { margin-top: 0.5rem; }
+  summary { cursor: pointer; font-weight: 600; }
+  .fact-row td:first-child { font-family: ui-monospace, monospace; font-size: 0.85rem; white-space: nowrap; }
+  .cited { color: var(--accent); }
+  footer { color: var(--muted); font-size: 0.8rem; text-align: center; margin-top: 2rem; }
+</style>
+</head>
+<body>
+<main>
+
+{% macro score_bar(entry, label) %}
+  <div class="score-row">
+    <span class="score-label">{{ label }}</span>
+    {% if entry and entry.score is not none %}
+      <div class="bar-track"><div class="bar-fill" style="width: {{ entry.score * 20 }}%"></div></div>
+      <span class="score-num">{{ entry.score }}</span>
+      <span class="badge badge-{{ entry.source }}">{{ entry.source }}</span>
+    {% else %}
+      <span class="badge badge-unavailable">근거 없음</span>
+    {% endif %}
+  </div>
+  {% if entry and entry.reason %}<p class="score-reason">{{ entry.reason }}</p>{% endif %}
+{% endmacro %}
+
+<h1>{{ description or slug }}</h1>
+{% if refined_brief %}<p class="subtitle">{{ refined_brief }}</p>{% endif %}
+
+{% if incomplete %}
+<div class="banner">⚠ 파이프라인이 끝까지 실행되지 않았습니다 — 아래는 지금까지 저장된 결과입니다.</div>
+{% endif %}
+
+<section>
+  <h2>확정 스택</h2>
+  {% if no_winner %}
+  <div class="banner">⚠ 통과 후보가 없는 요소 {{ no_winner|length }}개: {{ no_winner|join(', ') }} — 아래 "요소별 비교"에서 탈락 사유를 확인하세요.</div>
+  {% endif %}
+  {% if stack %}
+  <table>
+    <thead><tr><th>요소</th><th>고른 것</th><th>overall</th><th>선정 이유</th></tr></thead>
+    <tbody>
+    {% for row in stack %}
+      <tr>
+        <td>{{ row.component }}</td>
+        <td>{{ row.candidate }}{% if row.margin == "close" %} <span class="badge badge-close">근접</span>{% endif %}</td>
+        <td style="min-width:160px">{{ score_bar(row.overall, "overall") }}</td>
+        <td>{{ row.winner_reason }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">해당 없음 — 통과한 요소가 아직 없습니다.</p>
+  {% endif %}
+
+  <h3>최대 리스크</h3>
+  {% if risks %}
+  <ul class="plain">{% for r in risks %}<li>{{ r }}</li>{% endfor %}</ul>
+  {% else %}
+  <p class="empty">해당 없음 — 확정 후보에 남은 단점·유의사항이 없습니다.</p>
+  {% endif %}
+
+  <h3>명시된 가정</h3>
+  {% if assumptions %}
+  <ul class="plain">{% for a in assumptions %}<li>{{ a }}</li>{% endfor %}</ul>
+  {% else %}
+  <p class="empty">해당 없음 — 사용자가 모든 질문에 응답해 기본값을 쓰지 않았습니다.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>💡 지금 만들지 않아도 되는 것</h2>
+  {% if deferred %}
+  <ul class="plain">
+    {% for c in deferred %}
+    <li><strong>{{ c.name }}</strong> ({{ c.necessity }}) — {{ c.necessity_reason }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">해당 없음 — 이번 설명에서는 뒤로 미루거나 불필요하다고 판단된 요소가 없습니다.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>이번에 다루지 않은 요소</h2>
+  {% if skipped %}
+  <ul class="plain">
+    {% for c in skipped %}
+    <li><strong>{{ c.name }}</strong> ({{ c.necessity }}, priority {{ c.priority }}) — {{ c.why }}</li>
+    {% endfor %}
+  </ul>
+  <p class="score-reason">더 보려면 <code>--max-components {{ skipped_reopen_count }}</code>로 다시 돌리세요.</p>
+  {% else %}
+  <p class="empty">해당 없음 — 통과 대상 요소를 전부 다뤘습니다.</p>
+  {% endif %}
+</section>
+
+<details>
+  <summary>다음 명령어</summary>
+  <p>지금까지 결과를 다시 보려면:</p>
+  <ul class="plain">
+    <li><code>scout show {{ slug }} analyze</code> — 요소 전체(걸러진 것 포함)</li>
+    <li><code>scout show {{ slug }} search</code> — 후보별 사실 원본(dossier)</li>
+    <li><code>scout show {{ slug }} verify</code> — 판정 전문</li>
+    <li><code>scout show {{ slug }} evaluate</code> — 점수·순위 전문</li>
+  </ul>
+  {% if stack %}
+  <p>확정된 후보:</p>
+  <ul class="plain">
+    {% for row in stack %}<li>{{ row.component }} → {{ row.candidate }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</details>
+
+<section>
+  <h2>요소별 비교</h2>
+  {% if elements %}
+  {% for el in elements %}
+  <h3>{{ el.component.name }}</h3>
+  {% for c in el.candidates %}
+  <div class="candidate-block{% if c.rank is none %} rejected{% endif %}">
+    <span class="candidate-name{% if c.rank is none %} rejected{% endif %}">
+      {{ "✔" if c.rank == 1 else ("✘" if c.rank is none else "·") }} {{ c.name }}
+    </span>
+    {% if c.kind %}<span class="badge">{{ c.kind }}</span>{% endif %}
+    {% if c.grounding_violations %}<span class="badge badge-violation">grounding 위반 {{ c.grounding_violations }}건</span>{% endif %}
+
+    {% if c.rank is none %}
+      <p class="quote">탈락 — {{ c.rejected_reason }}</p>
+    {% else %}
+      {{ score_bar(c.overall, "overall") }}
+      {% if c.rank == 1 %}
+        <p class="quote"><strong>1위</strong> {{ c.winner_reason }}</p>
+      {% elif c.runner_up_note %}
+        <p class="quote">{{ c.runner_up_note }}</p>
+      {% endif %}
+      {{ score_bar(c.maturity, "maturity") }}
+      {{ score_bar(c.risk, "risk") }}
+      {% if c.dossier_gaps %}
+      <p class="score-reason">gaps: {{ c.dossier_gaps|join('; ') }}</p>
+      {% endif %}
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endfor %}
+  {% else %}
+  <p class="empty">해당 없음 — 아직 평가된 요소가 없습니다.</p>
+  {% endif %}
+</section>
+
+<details>
+  <summary>탈락 사유 전체</summary>
+  {% if rejections %}
+  <table>
+    <thead><tr><th>요소</th><th>후보</th><th>탈락 사유</th></tr></thead>
+    <tbody>
+    {% for r in rejections %}
+      <tr><td>{{ r.component }}</td><td>{{ r.candidate }}</td><td>{{ r.reason }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">해당 없음 — 탈락한 후보가 없습니다.</p>
+  {% endif %}
+</details>
+
+<details>
+  <summary>근거 목록</summary>
+  {% if facts_by_candidate %}
+  {% for group in facts_by_candidate %}
+  <h3>
+    {{ group.candidate }} ({{ group.component }}{% if group.kind %} · {{ group.kind }}{% endif %})
+    {% if group.verdict and group.verdict.confidence == "low" %}<span class="badge badge-low">confidence: low</span>{% endif %}
+    {% if group.grounding_violations %}<span class="badge badge-violation">grounding 위반 {{ group.grounding_violations }}건</span>{% endif %}
+  </h3>
+  {% if group.facts %}
+  <table>
+    <thead><tr><th>fact_id</th><th>label</th><th>value</th><th>url</th><th>조회일</th></tr></thead>
+    <tbody>
+    {% for row in group.facts %}
+      <tr class="fact-row">
+        <td class="{{ 'cited' if row.cited else '' }}">{{ row.fact.id }}{% if row.cited %} ✓{% endif %}</td>
+        <td>{{ row.fact.label }}</td>
+        <td>{{ row.fact.value }}</td>
+        <td>{% if row.fact.url %}<a href="{{ row.fact.url }}">link</a>{% endif %}</td>
+        <td>{{ row.fact.retrieved_at }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">해당 없음 — 조회된 사실이 없습니다.</p>
+  {% endif %}
+  {% if group.dossier_gaps %}
+  <p class="score-reason">gaps: {{ group.dossier_gaps|join('; ') }}</p>
+  {% endif %}
+  {% endfor %}
+  {% else %}
+  <p class="empty">해당 없음 — 저장된 사실이 없습니다.</p>
+  {% endif %}
+
+  {% if other_gaps %}
+  <h3>그 외 gaps</h3>
+  <ul class="plain">
+    {% for g in other_gaps %}<li><strong>{{ g.candidate }}</strong>: {{ g.note }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</details>
+
+<footer>project-scout · {{ slug }}</footer>
+</main>
+</body>
+</html>

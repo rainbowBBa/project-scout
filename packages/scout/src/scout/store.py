@@ -278,6 +278,15 @@ def add_gap(
         )
 
 
+def get_all_gaps(slug: str, *, runs_dir: str | None = None) -> list[dict]:
+    """report용 — 후보뿐 아니라 요소·단계 이름으로 남은 gap까지 전부 덤프한다."""
+    with _conn(slug, runs_dir) as conn:
+        rows = conn.execute(
+            "SELECT candidate, note FROM gaps WHERE slug = ?", (slug,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def _fact_from_row(row: sqlite3.Row) -> Fact:
     return Fact(
         id=row["fact_id"],
@@ -436,6 +445,17 @@ def get_verdicts(slug: str, *, runs_dir: str | None = None) -> list[Verdict]:
                 )
             )
         return verdicts
+
+
+def get_grounding_violations(
+    slug: str, *, runs_dir: str | None = None
+) -> dict[str, int]:
+    with _conn(slug, runs_dir) as conn:
+        rows = conn.execute(
+            "SELECT candidate, grounding_violations FROM verdicts WHERE slug = ?",
+            (slug,),
+        ).fetchall()
+        return {r["candidate"]: r["grounding_violations"] for r in rows}
 
 
 def get_ungrounded_citations(

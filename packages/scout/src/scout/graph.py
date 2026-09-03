@@ -15,6 +15,7 @@ from langgraph.graph import END, START, StateGraph
 from scout.stages import analyze as analyze_stage
 from scout.stages import evaluate as evaluate_stage
 from scout.stages import interview as interview_stage
+from scout.stages import report as report_stage
 from scout.stages import search as search_stage
 from scout.stages import verify as verify_stage
 from scout.state import ScoutState
@@ -45,12 +46,14 @@ def build_graph(
     graph.add_node(
         "evaluate", lambda state: evaluate_stage.evaluate_node(state, llm=llm)
     )
+    graph.add_node("report", lambda state: report_stage.report_node(state))
     graph.add_edge(START, "interview")
     graph.add_edge("interview", "analyze")
     graph.add_edge("analyze", "search")
     graph.add_edge("search", "verify")
     graph.add_edge("verify", "evaluate")
-    graph.add_edge("evaluate", END)
+    graph.add_edge("evaluate", "report")
+    graph.add_edge("report", END)
     return graph.compile(checkpointer=checkpointer)
 
 
