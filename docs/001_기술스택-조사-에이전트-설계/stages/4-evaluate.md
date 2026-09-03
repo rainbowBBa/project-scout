@@ -2,19 +2,24 @@
 
 ← [단계 목록](README.md) · 이전: [3-verify](3-verify.md) · 다음: [5-report](5-report.md)
 
-**계산된 숫자와 판정을 놓고 종합 점수를 매기고 요소별 순위를 정한다.**
+**계산된 숫자와 판정을 놓고 종합 점수를 매기고 요소별 순위를 정한 뒤,
+`design`의 기본틀을 조사 결과로 수정해 설계를 확정한다.**
 모듈 `scout/stages/evaluate.py` + `scout/rubric.py` ·
-테이블 `scores` `picks` · LLM 1회/요소 (요소 3개면 3회)
+테이블 `scores` `picks` `final_designs` · LLM 1회/요소 + 확정 1회 (요소 3개면 4회)
 
 ---
 
 ## 목적
 
-`verify`가 후보를 하나씩 판정했다. 이제 **후보끼리 비교**해 요소별 1위를 고르고
-최종 스택을 조립한다.
+`verify`가 후보를 하나씩 판정했다. 이제 두 가지를 한다.
+
+1. **후보끼리 비교**해 요소별 1위를 고른다
+2. 고른 것들과 `design`의 `Architecture`를 놓고 **기본틀을 수정해 확정한다** —
+   확정된 구조·데이터 흐름, 무엇이 왜 바뀌었는지, 붙이는 지점, 조합 고유 위험
 
 `verify`가 판정을 끝냈으므로 **`evaluate`는 사실을 다시 해석하지 않는다.**
 같은 사실을 두 번 추론하면 두 결론이 갈릴 수 있고, 그러면 어느 쪽을 믿어야 할지 알 수 없다.
+설계 확정도 같은 규율을 지킨다 — 요소별 판단을 다시 하지 않고 **조합만** 판단한다.
 
 ---
 
@@ -25,6 +30,8 @@
 | 판정 | `verdicts` + `citations` |
 | 계산된 점수 | `scores` (`maturity` · `risk`) |
 | 사실 숫자 | `facts` (SQL로 직접 조회) |
+| 설계 본문 | `designs` → **`Architecture`** (설계 확정 단계에서만 — 수정의 출발점) |
+| 결정 지점 | `components` (닫힌 결정·걸러진 것 포함, 설계 확정 단계에서만) |
 | 제약조건 | `runs.interview_json` → **`refined_brief`** |
 
 ---
@@ -145,6 +152,107 @@ overall 차이 <= 1  →  "close"
 > "socket.io를 골랐다. `overall` 4 vs ws 3 — 재연결·룸이 내장돼 3인 팀 3개월에
 > 구현 부담이 작다."
 
+### 4. 설계 확정 — LLM 1회 (요소 수와 무관)
+
+요소별 순위가 끝나면 **한 번 더** 부른다. 이번엔 후보를 비교하는 게 아니라
+**`design`이 세운 기본틀을 조사 결과로 수정해 확정**한다.
+
+```python
+class FinalDesign(BaseModel):
+    summary: str                    # 확정된 권장 설계 — 고른 것들의 이름이 문장에 든다
+    shape: str                      # 확정된 구조 — Architecture.shape 의 수정판
+    data_flow: str                  # 확정된 데이터 흐름
+    changes_from_design: list[str]  # 기본틀에서 무엇이 왜 바뀌었나 (근거 인용)
+    stack_rationale: str            # 왜 이 조합인가
+    integration_notes: list[str]    # 붙이는 지점 · 주의
+    combination_risks: list[str]    # 조합 고유 위험
+    build_order: list[str]          # 이 조합으로 무엇부터
+    unresolved: list[str]           # 승자 없는 요소 · 조사 후 뺀 요소 · 미해결
+```
+
+프롬프트에 넣는 것:
+
+| 재료 | 왜 필요한가 |
+|---|---|
+| `designs`의 `Architecture` | **수정의 출발점.** `shape`·`data_flow`를 여기서 물려받는다 |
+| 요소별 `winner` + `winner_reason` | **이미 끝난 판단.** 다시 하지 않고 인용한다 |
+| 통과 후보의 `cons` · `caveats` | 구조 전제를 깨뜨리는 게 있는지 — 수정의 근거 |
+| `needs_comparison=false` 결정 지점 | 설계가 깔고 있는 전제 (언어·런타임·배포 등) |
+| 승자 없는 요소 · 통과 못한 요소 | `unresolved`의 재료 |
+| `refined_brief` | 조합 판단에 쓸 제약조건 |
+
+#### ★ 확정 설계는 기본틀의 **수정판**이다 — 별개 문서가 아니다
+
+`shape`·`data_flow`가 `Architecture`와 **같은 이름·같은 성격**인 것은 의도다.
+이 단계의 산출물은 "고른 것들의 조합 설명서"가 아니라 **기본틀의 v2**여야 한다.
+
+```
+1 · design    Architecture      "메시지와 요약을 한 DB에 넣어 큐를 뺀다"
+                    │
+2 · search·verify   │  socket.io 판정의 caveats:
+                    │  "요약 워커가 같은 프로세스면 LLM 지연이 이벤트 루프를 막는다"
+                    ▼
+3 · evaluate  FinalDesign       "요약 워커를 별 프로세스로 분리한다"
+                                changes_from_design: 왜 바꿨는지 + 근거
+```
+
+이게 없으면 위 결론을 `integration_notes`의 주의사항으로만 적게 되고,
+**바뀐 구조 자체는 어디에도 남지 않는다.** 조사가 설계를 바꿨다는 것이 이 도구의
+값어치인데, 정작 바뀐 설계를 담을 자리가 없어진다.
+
+`designs` 행은 **덮어쓰지 않는다.** 두 버전이 남아야 "조사 전 설계"와 "조사 후 설계"를
+대조할 수 있고, 그 대조가 증거다 ([03-저장](../03-저장.md)).
+
+#### `changes_from_design` — 무엇이 · 왜 · 무엇을 근거로
+
+```
+"요약 워커를 백엔드 프로세스에서 분리했다 — 같은 프로세스면 LLM 호출 지연이
+ WebSocket 이벤트 루프를 막는다. socket.io 판정의 caveats 에서 나온 제약이다"
+```
+
+**비면 지우지 않는다** — "조사 결과가 기본틀을 바꾸지 않았다"를 명시한다(불변식 12).
+기본틀이 조사를 견뎠다는 것도 정보다.
+
+#### ★ 바꿀 근거가 없으면 바꾸지 않는다
+
+프롬프트에 박는 앵커다.
+
+```
+shape·data_flow 는 Architecture 를 출발점으로 쓴다. 조사 결과에 근거가 있을 때만
+고치고, 고쳤으면 changes_from_design 에 이유와 근거를 쓴다.
+  ✘ 문장을 매끄럽게 다시 쓰는 것은 변경이 아니다 — 근거 없는 재작성 금지
+  ✔ verdicts 의 cons·caveats 또는 탈락 사유가 구조 전제를 깨뜨렸을 때만 고친다
+```
+
+이 앵커가 없으면 judge가 매번 설계 산문을 새로 쓰고, `changes_from_design`이
+"표현을 다듬었다" 같은 항목으로 채워져 소음이 된다. 그러면 **정말 바뀐 게 무엇인지**
+읽는 사람이 알 수 없다 — 이 필드의 값어치가 0이 된다.
+
+#### ★ 개별 후보의 단점을 `combination_risks`에 옮겨 적지 않는다
+
+`combination_risks`는 **조합했을 때 비로소 생기는 위험**만 담는다. 개별 후보의 단점은
+이미 `verify`의 `cons`·`caveats`에 있고 보고서가 따로 보여준다. 구분이 무너지면 이
+필드는 `cons`의 사본이 되고, 사용자는 같은 문장을 두 번 읽는다.
+
+```
+아니다:  "socket.io는 독자 프로토콜을 쓴다"           ← cons 에 이미 있다
+맞다:    "단일 프로세스 전제가 깨지면 socket.io는 어댑터가 필요해지고,
+          PostgreSQL만으로 버티려던 전제도 함께 흔들린다"   ← 두 선택이 얽혀 생긴 위험
+```
+
+프롬프트에 이 반례를 박는다. 안 넣으면 judge가 `cons`를 재활용한다.
+
+#### 왜 `report`가 아니라 여기인가
+
+`report`는 LLM을 쓰지 않는다(불변식 7). "이렇게 만들면 되겠다"는 문장은 판단이므로
+판단하는 단계에서 써야 한다. `report`는 이 행을 읽어 렌더링만 한다.
+
+#### 실패해도 파이프라인을 죽이지 않는다
+
+설계 확정은 요소별 순위가 **이미 저장된 뒤**에 돈다. 여기서 실패하면 `gaps`에 기록하고
+넘어간다 — 요소별 비교 결과는 그대로 남고, 보고서는 "설계 확정 실패 + 이유"를 찍는다
+(불변식 11 · 12).
+
 ---
 
 ## 왜 가중 합산이 아니라 judge인가
@@ -222,7 +330,7 @@ deprecated    npm.deprecated 또는 pypi.yanked → 1
 → 하한 1, 상한 5로 클램프
 ```
 
-`osv.*`는 절단선 1번이라 [STEP 10](../../002_개발계획/STEP-10-선택.md)까지 dossier에
+`osv.*`는 절단선 1번이라 [STEP 10](../../002_개발계획/STEP-13-선택.md)까지 dossier에
 없다. **없으면 취약점·심각도 항목을 건너뛴다** — 0건으로 간주해 5를 주지 않는다.
 "조회하지 않았다"와 "조회했더니 0건이다"는 다른 사실이고, 뒤엣것으로 대접하면
 `risk`가 근거 없이 후해진다. `osv`를 붙이면 공식은 그대로 두고 사실만 늘어난다.
@@ -266,7 +374,15 @@ scores (slug, candidate, criterion, score, source, reason)
 
 picks  (slug, component, candidate, rank, rejected_reason,
         winner_reason, runner_up_note, margin)
+
+final_designs (slug PK, summary, shape, data_flow, changes_from_design_json,
+               stack_rationale, integration_notes_json, combination_risks_json,
+               build_order_json, unresolved_json)
 ```
+
+`final_designs`는 slug당 1행이다. 보고서 최상단 "권장 설계" 섹션이 이 행 하나다.
+`designs`의 `shape`·`data_flow`와 **같은 이름의 컬럼을 갖는다** — v1↔v2 대조가
+필드 단위로 성립해야 하기 때문이다.
 
 `scores`에는 **탈락 후보의 `maturity`·`risk`도 들어간다.** 탈락 후보를 계산에서 빼면
 "judge는 통과시켰지만 계산은 1을 줬다"를 보고서에서 보여줄 수 없고, 이중 안전망이
@@ -290,6 +406,12 @@ picks  (slug, component, candidate, rank, rejected_reason,
 | `overall`이 `maturity`·`risk`의 평균과 같음 | 경고 로그 — 프롬프트 반례가 안 먹혔다는 신호 |
 | `ranking`이 `overall` 내림차순이 아님 | 코드가 재정렬. 동점은 `maturity` → 이름 순 |
 | 구조화 출력 파싱 실패 | `include_raw=True`로 원본 확보 후 1회 재시도 |
+| **1위가 하나도 없음** (전 요소 후보 탈락) | 설계 확정을 부르지 않는다. `gaps`에 기록하고 보고서가 이유를 찍는다 |
+| **설계 확정 파싱 실패** | 1회 재시도 후 `gaps`에 기록하고 계속. 요소별 순위는 그대로 남는다 |
+| **`designs` 행이 없음** (`--from evaluate` 등) | 설계 본문 없이 요소별 승자만으로 확정한다. `gaps`에 "설계 본문 없음"을 남긴다 |
+| **`combination_risks`가 `cons`의 사본** | 경고 로그. 프로토타입에서는 통과시킨다 |
+| **`shape`·`data_flow`가 비었음** | `Architecture`의 값을 그대로 복사하고 `gaps`에 기록 — 확정 설계에 구조가 없으면 이 단계가 성립하지 않는다 |
+| **`changes_from_design`이 비었음** | 정상이다. "기본틀 유지"로 렌더링한다 (불변식 12) |
 
 ---
 

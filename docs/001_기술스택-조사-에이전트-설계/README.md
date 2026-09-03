@@ -1,10 +1,11 @@
 # 001 · project-scout 설계 문서
 
 > 2일 프로토타입 · AWS Bedrock (claude-sonnet-5) · LangGraph · uv/ruff/ty
-> v8 · 2026-09-02
+> v20 · 2026-09-03
 
-사용자가 만들고 싶은 소프트웨어를 자연어로 설명하면, 개발에 필요한 요소를 분석하고
-요소별 구현 방법·소프트웨어·라이브러리를 조사해 **판정**하고, 그 결과로 평가·보고하는 Python CLI.
+사용자가 만들고 싶은 소프트웨어를 자연어로 설명하면, **구현 설계를 세우고** 그 설계에서
+비교가 필요한 결정 지점마다 방법·소프트웨어·라이브러리를 조사해 **판정**하고,
+그 결과로 설계를 확정해 보고하는 Python CLI.
 
 ---
 
@@ -38,7 +39,7 @@
 
 ### [03-저장.md](03-저장.md)
 
-`runs/<slug>/scout.db` 하나에 담는 8개 테이블 스키마. **grounding 검증 SQL**의 본체가 여기
+`runs/<slug>/scout.db` 하나에 담는 10개 테이블 스키마. **grounding 검증 SQL**의 본체가 여기
 있다. `scout show`가 어떻게 동작하는지, 사람이 결과를 어떻게 열어보는지.
 
 ### [04-아키텍처.md](04-아키텍처.md)
@@ -66,8 +67,8 @@ uv 워크스페이스가 **보안 경계를 의존성 수준에서 강제하는*
 
 ### [07-검증.md](07-검증.md)
 
-테스트 4종이 각각 어떤 주장을 검증하는지. 성공 기준 10개.
-**M0에서 확인할 것 6개** — 지금 단정하지 않고 첫날에 실측할 항목. 환경·크레덴셜·비용.
+테스트 6종이 각각 어떤 주장을 검증하는지. 성공 기준 10개.
+**M0에서 확인할 것 8개** — 지금 단정하지 않고 첫날에 실측할 항목. 환경·크레덴셜·비용.
 
 ### [stages/](stages/README.md)
 
@@ -76,10 +77,10 @@ uv 워크스페이스가 **보안 경계를 의존성 수준에서 강제하는*
 | 파일 | 단계 | 한 줄 |
 |---|---|---|
 | [0-interview.md](stages/0-interview.md) | `interview` | 막연한 요청을 되묻고 **구체화** |
-| [1-analyze.md](stages/1-analyze.md) | `analyze` | 필요한 요소 도출 + **정말 필요한지 판단** |
+| [1-design.md](stages/1-design.md) | `design` | **구현 설계** + 결정 지점 도출 + 정말 필요한지 판단 |
 | [2-search.md](stages/2-search.md) | `search` | 구현 방법·소프트웨어·라이브러리 조사 + **dossier 수집** |
 | [3-verify.md](stages/3-verify.md) | `verify` | **LLM-as-judge** — 장단점 + 해결가능성, 인용 강제 |
-| [4-evaluate.md](stages/4-evaluate.md) | `evaluate` | 계산 점수 + judge **종합 점수** → 순위·선정 |
+| [4-evaluate.md](stages/4-evaluate.md) | `evaluate` | 계산 점수 + judge **종합 점수** → 순위·선정 + **설계 확정** |
 | [5-report.md](stages/5-report.md) | `report` | LLM 없이 **단일 HTML** 렌더링 |
 
 ### 이 문서 밖 — [002 개발계획](../002_개발계획/README.md)
@@ -103,13 +104,15 @@ v1 → v8 변경 이력. 설계 판단이 뒤집힌 지점과 그 이유. **본�
                               (유일한 출구)      npm / PyPI / GitHub
                                                 OSV / DuckDuckGo
 
-interview → analyze → search → verify → evaluate → report
-   ↓          ↓         ↓         ↓         ↓         ↓
- runs    components  candidates verdicts  scores  report.html
-                     facts     citations  picks
-                     gaps
+interview → design → search → verify → evaluate → report
+   ↓          ↓        ↓         ↓         ↓          ↓
+ runs     designs   candidates verdicts  scores   report.html
+        components    facts    citations  picks
+                      gaps            final_designs
                         └──────── runs/<slug>/scout.db ────────┘
 ```
 
 **설계의 한 문장**: judge는 코드가 먼저 모아둔 사실만 인용할 수 있고,
 그 인용이 실제로 존재하는지 코드가 다시 대조한다.
+
+**답의 한 문장**: 사용자가 받는 것은 후보 목록이 아니라 **이렇게 만들면 되겠다는 설계**다.

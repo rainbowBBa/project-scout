@@ -3,7 +3,11 @@
 > 개발에 필요한 요소를 도출하고 `necessity`·`priority`를 매긴다.
 > 전부 저장하고 상위 3개만 다음 STEP으로 통과시킨다. LLM 1회. MCP 불필요.
 
-**선행** STEP 02 · **시간** ~1h · **설계** [stages/1-analyze](../001_기술스택-조사-에이전트-설계/stages/1-analyze.md)
+**선행** STEP 02 · **시간** ~1h · **설계** [stages/1-design](../001_기술스택-조사-에이전트-설계/stages/1-design.md)
+
+> **끝낸 작업의 기록이다.** 이 STEP이 만든 `analyze`는 STEP 09에서 `design`으로
+> 대체됐다 — 설계 문서(`1-analyze.md`)도 `1-design.md`로 재작성됐다.
+> 무엇이 왜 바뀌었는지는 [001 CHANGELOG v20](../001_기술스택-조사-에이전트-설계/CHANGELOG.md).
 
 ## 만들 것
 - `scout/stages/analyze.py` (도메인 힌트 문자열 포함)

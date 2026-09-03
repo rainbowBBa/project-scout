@@ -1,6 +1,6 @@
 # 2 · search
 
-← [단계 목록](README.md) · 이전: [1-analyze](1-analyze.md) · 다음: [3-verify](3-verify.md)
+← [단계 목록](README.md) · 이전: [1-design](1-design.md) · 다음: [3-verify](3-verify.md)
 
 **구현 방법·소프트웨어·라이브러리를 조사하고, 판정에 쓸 사실(dossier)까지 모은다.**
 모듈 `scout/stages/search.py` · 테이블 `candidates` `facts` `gaps` · LLM 2회/요소 + MCP
@@ -21,12 +21,27 @@
 
 ## 입력
 
-`components` 테이블에서 `necessity IN ('essential', 'valuable')`인 요소를
-`priority` 순으로 정렬해 **상위 3개**만 (`--max-components`, 기본 3).
-`defer`/`unnecessary`는 물론이고 우선순위가 밀린 요소도 이 단계에 들어오지 않는다 —
-[1-analyze](1-analyze.md) 참조.
+`components` 테이블에서 `necessity IN ('essential', 'valuable')`이고
+`needs_comparison = true`인 결정 지점을 `priority` 순으로 정렬해 **상위 3개**만
+(`--max-components`, 기본 3). `defer`/`unnecessary`, 설계에서 이미 닫힌 결정,
+우선순위가 밀린 요소는 이 단계에 들어오지 않는다 — [1-design](1-design.md) 참조.
 
 `interview` 제약조건도 함께 넣는다 — 질의 생성 방향을 잡는 데 쓴다.
+
+### 결정 지점이 조사 지시를 들고 온다
+
+`design`이 요소마다 네 값을 채워 보낸다. 에이전트 태스크 프롬프트가 이걸 그대로 받는다.
+
+| 값 | 에이전트에게 하는 일 |
+|---|---|
+| `decision_question` | **무엇을 정해야 하는가** — 조사의 목표를 한 문장으로 준다 |
+| `constraints` | **후보 필터** — 이 조건을 못 지키는 후보는 찾아도 의미가 없다 |
+| `search_hints` | **질의 씨드** (영어 기술 어휘). `npm_search`에 바로 넣을 수 있는 값 |
+| `role_in_design` · `approach_notes` | 설계 안에서 이 조각이 맡는 자리와 방향 |
+
+`search_hints`가 없으면 이 단계는 한국어 추상 명사구(`실시간 메시지 전달`)만 들고
+`npm_search`를 부르게 되고, 레지스트리에서 신호가 나오지 않는다. 그래서 `design`은
+이 값을 비워 보내지 않는다.
 
 ### 프로토타입 규모
 

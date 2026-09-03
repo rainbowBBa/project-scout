@@ -6,6 +6,220 @@
 
 ---
 
+## v21 (2026-09-03) — `FinalDesign`을 기본틀의 **수정판**으로
+
+v20이 남긴 빈틈을 메운다. 방향을 바꾼 게 아니라 v20이 하려던 것을 **끝까지** 한 것이다.
+
+### 무엇이 빠져 있었나
+
+v20은 파이프라인을 이렇게 잡았다.
+
+```
+2 design    기본틀(Architecture) + 결정 지점
+3 search·verify   조사 · 판정
+4 evaluate  요소별 순위 + 설계 확정(FinalDesign)
+```
+
+의도는 "4번이 3번 정보로 2번 기본골격을 수정해 설계를 완성한다"였는데,
+**`FinalDesign`에 구조를 담을 필드가 없었다.**
+
+```
+Architecture (2번)                 FinalDesign (v20)
+  summary                            summary
+  shape          ← 구조                (없음)   ← ★
+  data_flow      ← 데이터 흐름         (없음)   ← ★
+  build_order                        build_order
+  open_questions                     stack_rationale / integration_notes
+                                     combination_risks / unresolved
+```
+
+그래서 `FinalDesign`은 기본틀의 v2가 아니라 **기본틀 옆에 서는 별개 문서**였다.
+"고른 것들의 조합 설명서"는 되지만, 조사 결과가 구조 전제를 깨뜨렸을 때 **바뀐 구조를
+담을 자리가 없다.**
+
+> 기본틀: "메시지와 요약을 한 DB에 넣어 큐를 뺀다"
+> 조사 결과: 요약 워커가 같은 프로세스면 LLM 지연이 이벤트 루프를 막는다
+> → v20에서는 `integration_notes`의 주의사항으로만 적힌다. 바뀐 구조는 어디에도 없다
+
+**조사가 설계를 바꿨다는 것이 이 도구의 값어치**인데, 정작 바뀐 설계가 산출물에
+없었다. 4번이 절반만 구현된 상태였다.
+
+### 필드 3개 추가
+
+```python
+class FinalDesign(BaseModel):
+    summary: str
+    shape: str                      # ★ 확정된 구조 — Architecture.shape 의 수정판
+    data_flow: str                  # ★ 확정된 데이터 흐름
+    changes_from_design: list[str]  # ★ 무엇이 왜 바뀌었나 (근거 인용)
+    stack_rationale: str
+    integration_notes: list[str]
+    combination_risks: list[str]
+    build_order: list[str]
+    unresolved: list[str]
+```
+
+`shape`·`data_flow`는 `Architecture`와 **같은 이름**이다. 그래야 v1↔v2 대조가 필드
+단위로 성립하고, `report`가 LLM 없이 **나란히 놓기만** 해도 대조표가 된다.
+
+`designs` 행은 **덮어쓰지 않는다.** 한 테이블에 겹쳐 쓰면 "조사해보니 전제가 바뀌었다"가
+사라진다. `final_designs`에 같은 이름의 컬럼 3개를 늘려 두 버전을 남긴다.
+
+### 앵커가 필요한 이유 — 근거 없는 재작성 금지
+
+`shape`·`data_flow`를 judge가 쓰게 하면 **매번 설계 산문을 새로 쓴다.** 그러면
+`changes_from_design`이 "표현을 다듬었다" 같은 항목으로 채워지고, **정말 바뀐 게
+무엇인지** 읽는 사람이 알 수 없다 — 이 필드의 값어치가 0이 된다.
+
+그래서 프롬프트에 반례를 박는다: `Architecture`를 **출발점으로** 쓰고, 조사 결과에
+근거(`verdicts`의 `cons`·`caveats`, 탈락 사유)가 있을 때만 고친다. 고쳤으면 이유를
+쓴다. `overall`이 평균이 아니라는 반례, `combination_risks`가 `cons`의 사본이 아니라는
+반례와 같은 성격의 장치다.
+
+`changes_from_design`이 비면 **"기본틀 유지"를 명시한다** — 기본틀이 조사를 견뎠다는
+것도 정보다(불변식 12).
+
+### 함께 정한 것 — 평가점수는 `evaluate`에 그대로 둔다
+
+"점수는 3번(검색·verify)에서 나오는 게 맞지 않나"를 검토했고 **바꾸지 않았다.**
+
+`overall`은 후보를 **나란히 놓고 비교해야** 나오는 값이고, `verify`는 후보를 하나씩
+독립 판정하는 pointwise다. 옮기려면 `verify`를 listwise로 바꿔야 하는데 그건
+001이 이미 잘라낸 자리다(`listwise 비교 judge` → `pointwise + evaluate 비교`).
+계산 점수(`maturity`·`risk`)만 앞으로 당기는 것은 가능하지만, 실행 순서가 이미
+"계산 전부 → judge → 설계 확정"이라 얻는 게 없다.
+
+### 연쇄 변경
+
+`4-evaluate.md`(정본) · `5-report.md`(권장 설계 섹션 확장 + v1 대조) ·
+`1-design.md`(`Architecture`는 v1이고 덮어쓰이지 않는다) · `03-저장.md`(컬럼 3개) ·
+`07-검증.md`(성공 기준 9-1 교체) · `02-파이프라인.md` · `stages/README.md` ·
+`CLAUDE.md`(용어 · 함정 2줄) · `002/STEP-10`·`STEP-11`.
+
+구현은 아직 없다 — STEP-09~12가 미착수이므로 `FinalDesign`은 `schemas.py`에 없다.
+이 버전은 **STEP-10·11이 만들 스펙**을 고친 것이다.
+
+---
+
+## v20 (2026-09-03) — `analyze` → `design`: 요소 나열에서 구현 설계로
+
+STEP-08까지 파이프라인이 완주하는 상태에서 결과를 보고 뒤집은 판단이다.
+**단계 수는 6개 그대로**이고, 1번 단계가 하는 일과 마지막 산출물의 성격이 바뀌었다.
+
+### 왜 뒤집었나
+
+`analyze`의 산출물은 기술 중립적인 **요소 목록**이었다 — `실시간 메시지 전달`, `인증`.
+중립성은 `search`가 후보를 넓게 보게 하려는 의도였고 그 의도 자체는 맞았다.
+그런데 실제로 돌려보니 두 가지가 걸렸다.
+
+**1. 추상 명사구만으로는 `search`가 후보를 못 찾는다.** 검색 대상(npm·PyPI·웹)은 영어
+생태계인데 `search` 에이전트에게 주는 조사 재료가 한국어 추상어뿐이었다.
+
+배선을 따라가 보니 원인이 더 구조적이었다. `Component.search_hints`가 스키마에는
+있는데 **`ANALYZE_SYSTEM_PROMPT`에 그 필드를 채우라는 지시가 한 줄도 없었다.**
+`default_factory=list`라 비어도 검증을 통과하고, `search`는 `조사 힌트: (없음)`을
+받은 채로 "`npm_search`를 먼저 쓴다"는 지시를 수행했다. 즉 설계 문서가 의도한 통로가
+구현에서 열린 적이 없었다.
+
+**2. 보고서가 답을 반만 준다.** "요소별로 이걸 골랐다"에서 멈추면 사용자는 고른
+것들을 **어떻게 조립하는지**를 직접 설계해야 한다. 그건 이 도구가 답해야 할 질문을
+안 답한 것이다.
+
+두 문제가 같은 뿌리였다 — **설계를 세우지 않고 요소만 나열했기 때문**이다. 설계가
+있으면 각 결정 지점에 "무엇을 정해야 하는가"와 "어떤 조건을 만족해야 하는가"가 생기고,
+그게 곧 조사 지시가 된다. 그리고 조사가 끝나면 그 설계를 확정할 수 있다.
+
+### 무엇이 바뀌었나
+
+**1. 단계명 `analyze` → `design`** (`stages/1-design.md` 신설, `1-analyze.md` 대체)
+
+단계명 = 모듈명 = CLI 인자 규칙이 있으므로 이름이 하는 일을 설명해야 한다.
+`scout show <slug> design` · `--from design`.
+
+001에서 잘라냈던 "별도 `design` 단계(아키텍처 후보 2~3안)"를 **새 7번째 단계 없이 이
+자리에서** 되살린 셈이다. 단, 아키텍처 후보를 2~3안 비교하는 건 여전히 안 한다 —
+설계는 1안만 세우고, 비교는 결정 지점 단위에서만 한다(`06-범위와일정.md` 절단 목록 갱신).
+
+**2. `design`이 툴을 쓴다 — 다만 사실은 만들지 않는다**
+
+`search`와 같은 2-pass다(ReAct 에이전트 → 구조화 추출). 그런데 **에이전트의
+`ToolMessage`는 `facts` 테이블에 들어가지 않는다.** 설계 어휘·후보 이름·패턴명을 잡는
+데만 쓰고, dossier는 여전히 `search`만 만든다.
+
+이 경계가 없으면 불변식 4·13이 무너진다. 설계 중에 스쳐본 값을 dossier에 섞으면
+kind 라우팅·top-up·중복 제거를 거치지 않은 사실이 judge의 인용 대상이 되고,
+**grounding은 통과하는데 후보마다 근거 커버리지가 달라진다.** 새 불변식으로 못박고
+`test_design_no_facts.py`가 배선을 검사한다(테스트 5종 → 6종).
+
+`web_search`는 `search`와 **같은 승인 게이트**를 쓴다. 예산은 실행 전체 3회
+(`search`는 결정 지점당 5회) — 설계는 요소별로 펼치지 않고 한 번 돌기 때문이다.
+게이트 인스턴스는 단계마다 새로 만든다: 두 노드가 각각 `asyncio.run()`으로 루프를
+새로 열어 `SearchGate`의 `asyncio.Lock`을 공유할 수 없다.
+
+공유 장치는 stage → stage import를 만들지 않기 위해 모듈로 뺀다 —
+`scout/approval.py`(승인 게이트)와 `scout/agentkit.py`(에이전트 기록 파싱).
+
+**3. `Component`가 결정 지점이 됐다**
+
+| 변경 | 내용 |
+|---|---|
+| `why` → `role_in_design` | "왜 필요한가"에서 "설계에서 무엇을 맡나"로. `necessity_reason`과 겹치던 필드를 설계 지향으로 돌렸다 |
+| `+ decision_question` | 무엇을 정해야 하는가 — 조사의 목표 |
+| `+ constraints` | 설계가 강제하는 선택 조건 — 후보 필터 |
+| `+ needs_comparison` · `no_comparison_reason` | 이미 닫힌 결정을 표시 |
+| `search_hints` 필수화 + **저장** | 프롬프트가 요구하고, 비면 `gaps`에 남는다 |
+
+`name`의 기술 중립은 **유지**한다 — 편향 방지 장치를 없앤 게 아니라, 구체적인 기술
+어휘를 `search_hints`로 옮겼다. 이름은 중립을 지키고 검색 재료는 따로 준다.
+
+`search_hints`를 저장으로 바꾼 이유: `store.get_components`로 돌아오는 재실행 경로에서
+힌트가 사라지면 이 변경의 효과가 재실행에서 소멸한다. "일회성 값이라 저장하지 않는다"는
+v19까지의 서술을 뒤집었다.
+
+#### `needs_comparison` — `necessity`와 다른 축이다
+
+`necessity`가 "이게 필요한가"라면 `needs_comparison`은 "이걸 지금 비교해서 골라야
+하는가"다. 반드시 필요하지만 이미 정해진 것이 있다 — `refined_brief`에 "3인
+TypeScript 팀"이 있으면 서버 런타임·언어는 `essential`이면서 닫힌 결정이다.
+
+이 축이 없으면 이미 정해진 걸 조사하느라 `search`·`verify` 호출을 쓰고, 그러면서도
+보고서에는 그 전제가 안 보인다. 걸러내되 **버리지 않는다** — 보고서의 "설계에서 이미
+정해진 부분"에 이유와 함께 싣는다(불변식 12).
+
+**4. `evaluate`가 설계를 확정한다** — LLM 1회 추가 (요소 수와 무관)
+
+요소별 순위가 끝난 뒤 `Architecture` + 요소별 승자 + 닫힌 결정 + `refined_brief`를
+놓고 `FinalDesign`을 뽑는다. 요소별 판단을 **다시 하지 않고 조합만** 판단한다 —
+`evaluate`가 사실을 재해석하지 않는다는 기존 규율의 연장이다.
+
+`report`가 아니라 여기인 이유: "이렇게 만들면 되겠다"는 판단이므로 판단하는 단계에서
+써야 한다. `report`는 LLM을 쓰지 않는다(불변식 7)는 것을 지키기 위한 배치다.
+
+`combination_risks`에 개별 후보의 단점을 옮겨 적지 않는다는 반례를 프롬프트에 박는다 —
+안 넣으면 judge가 `verdicts.cons`를 재활용하고, 사용자는 같은 문장을 두 번 읽는다.
+
+**5. 보고서 최상단이 "권장 설계"가 됐다**
+
+섹션 순서: 권장 설계 → 설계 개요(`<details>`) → 확정 스택 → **설계에서 이미 정해진
+부분**(신설) → 지금 만들지 않아도 되는 것 → 이하 기존. `report`는 LLM 없이 렌더링만
+한다는 원칙은 그대로다.
+
+**6. 테이블 2개 신설** — `designs`(조사 전 설계) · `final_designs`(확정 설계)
+
+한 테이블에 덮어쓰지 않는다. 둘을 대조할 수 있어야 "조사해보니 전제가 바뀌었다"가
+보인다.
+
+`components`의 컬럼도 바뀌었다. `store.py`는 `CREATE TABLE IF NOT EXISTS`만 실행하고
+마이그레이션 장치가 없으므로 — **기존 `scout.db`는 못 읽는다. 새 slug로 돌린다.**
+
+### 실행 계획
+
+STEP-08까지가 끝난 상태에서 STEP-09~12로 잇는다
+([002 개발계획](../002_개발계획/README.md)). STEP-03(`analyze`)은 이미 끝낸 작업의
+기록으로 그대로 남기고, STEP-09가 그것을 대체한다.
+
+---
+
 ## v19 (2026-09-03) — `evaluate`: 점수 공식의 결측 처리를 못박고 `gh.contributors`를 되찾음
 
 STEP-07을 구현하기 전에 `4-evaluate.md`의 점수 공식을 실제 dossier에 대보니 두 곳이
@@ -294,7 +508,7 @@ defer/unnecessary) 자체는 그대로다 — 신호가 별도 필드에서 문�
 `store.py`를 실제로 짜면서 `03-저장.md`의 DDL이 각 단계 문서의 Pydantic 스키마와
 어긋나는 지점 둘을 발견했다. 문서만 있고 코드가 없었을 땐 안 드러났다.
 
-- **`components`에 `priority` 컬럼 누락** — [1-analyze.md](stages/1-analyze.md)의
+- **`components`에 `priority` 컬럼 누락** — [1-design.md](stages/1-design.md)(당시 `1-analyze.md`)의
   `Component` 스키마와 출력 SQL은 `priority`를 포함하는데 `03-저장.md`의 DDL 스케치에는
   없었다. `search`가 상위 N개를 고르는 정렬 기준이라 없으면 안 된다
 - **`verdicts`에 `unsupported_claims_json` 컬럼 누락** — `Verdict` 스키마의

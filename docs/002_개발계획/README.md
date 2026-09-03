@@ -20,10 +20,38 @@
 | [06](STEP-06-verify.md) | LLM-as-judge + grounding | 1.25h | — |
 | [07](STEP-07-evaluate.md) | 점수 계산 + judge 종합 점수 · 순위 | 1h | — |
 | [08](STEP-08-report.md) | 단일 HTML 렌더링 | 1.25h | — |
-| [09](STEP-09-검증.md) | 테스트 4종 + E2E | 1h | — |
-| [10](STEP-10-선택.md) | `osv` · `method` 후보 (여유 시) | 여유분 | O |
+| [09](STEP-09-design.md) | **`analyze` → `design`** — 구현 설계 + 결정 지점 | 3h | O |
+| [10](STEP-10-설계확정.md) | `evaluate` 끝에서 권장 설계 확정 | 1.25h | — |
+| [11](STEP-11-권장설계리포트.md) | 보고서 최상단을 권장 설계로 | 1h | — |
+| [12](STEP-12-검증.md) | 테스트 6종 + E2E | 1.5h | O |
+| [13](STEP-13-선택.md) | `osv` · `method` 후보 · `--from` (여유 시) | 여유분 | O |
 
-**Day 1** STEP 00~04 앞부분 (8h) · **Day 2** STEP 04 마무리~09 (7.25h + 여유 1h)
+**Day 1** STEP 00~04 앞부분 (8h) · **Day 2** STEP 04 마무리~08 (6.25h)
+· **Day 3** STEP 09~12 (6.75h)
+
+---
+
+## 왜 09부터 다시 시작하는가
+
+STEP 08까지 파이프라인이 완주하는 상태에서 결과를 보고 뒤집은 판단이다.
+`analyze`의 산출물이 추상적인 요소 목록이라 `search`가 후보를 잘 못 찾고, 보고서가
+"요소별로 이걸 골랐다"에서 멈췄다. 근거와 경위는
+[001 CHANGELOG v20](../001_기술스택-조사-에이전트-설계/CHANGELOG.md).
+
+```
+STEP 03  analyze   요소 도출 + necessity          ← 끝낸 작업. 기록으로 남긴다
+   ↓
+STEP 09  design    구현 설계 + 결정 지점           ← 03을 대체한다
+STEP 10  확정      요소별 승자 → 하나의 설계
+STEP 11  리포트     최상단이 "이렇게 만들면 되겠다"
+STEP 12  검증      테스트 6종 (5종 + test_design_no_facts)
+```
+
+STEP 03~08 문서는 **고치지 않는다.** 끝낸 작업의 기록이고, 무엇이 바뀌었는지는
+09~12와 001 CHANGELOG가 말한다.
+
+**단계 수는 6개 그대로다** — `design`은 `analyze`가 있던 자리를 대체하고,
+설계 확정은 `evaluate` 안에 들어간다. 7번째 단계를 만들지 않았다.
 
 ---
 
@@ -31,6 +59,9 @@
 
 001은 Day 1에 MCP 서버를 먼저 만들라고 했다. 순서를 바꾼 근거는 **의존성**이다 —
 `interview`와 `analyze`는 LLM만 쓰고 MCP가 필요 없다. MCP는 `search`부터 필요하다.
+
+> 이 근거는 STEP 09에서 반쯤 뒤집혔다 — `design`은 툴을 쓰므로 MCP가 필요하다.
+> 그때는 MCP 서버가 이미 있으므로 순서에는 영향이 없다.
 
 ```
 STEP 0 환경 → 1 저장 → 2 interview → 3 analyze → 4 MCP서버 → 5 search → …
@@ -42,7 +73,7 @@ STEP 0 환경 → 1 저장 → 2 interview → 3 analyze → 4 MCP서버 → 5 s
 
 **비용**: MCP 서버가 Day 2로 일부 넘어와 Day 2가 빡빡해진다.
 → STEP 04의 providers를 5종 → **4종**으로 줄였다. `osv`는 001의 절단선 1번이므로
-처음부터 STEP 10으로 뺐다 (6.5h → 5h).
+처음부터 선택 STEP(현 [13](STEP-13-선택.md))으로 뺐다 (6.5h → 5h).
 
 ---
 
@@ -62,8 +93,13 @@ Day 2
 [x] STEP 06  verify      verdicts/citations + test_grounding 통과
 [x] STEP 07  evaluate    scores 3기준 + overall + score_reason + margin
 [x] STEP 08  report      브라우저에서 열리는 report.html
-[ ] STEP 09  검증        테스트 4종 + E2E 완주
-[ ] STEP 10  선택        여유 있으면 osv
+
+Day 3 — analyze → design 재설계 (001 CHANGELOG v20)
+[ ] STEP 09  design      approval/agentkit 추출 · designs 테이블 · search_hints 실제로 채워짐
+[ ] STEP 10  설계확정     final_designs 1행 · 조합 근거·통합 주의·조합 위험
+[ ] STEP 11  리포트       최상단 권장 설계 + "설계에서 이미 정해진 부분"
+[ ] STEP 12  검증        테스트 6종 + E2E 완주 (새 slug)
+[ ] STEP 13  선택        여유 있으면 osv · --from 실제 건너뛰기
 ```
 
 ---

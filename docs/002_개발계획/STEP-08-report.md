@@ -23,7 +23,10 @@
 - [x] 빈 섹션이 사라지지 않고 "해당 없음 + 이유"로 표시된다
 
 `tests/test_report.py`가 위 항목을 store 시드 데이터로 검증한다 (실제 AWS 호출 없이).
-실제 `scout run`으로 만든 `report.html`을 브라우저로 여는 최종 확인은 STEP 09(E2E)에서 한다.
+실제 `scout run`으로 만든 `report.html`을 브라우저로 여는 최종 확인은 STEP 12(E2E)에서 한다.
+
+> 이 STEP의 화면 구조는 STEP 11에서 바뀐다 — 최상단에 "권장 설계"가 들어오고
+> "설계에서 이미 정해진 부분" 섹션이 신설된다. 위 완료 기준은 그대로 유지된다.
 
 ## 막히면
 `jinja2`가 이미 깔려 있는지 `uv pip show jinja2` — langchain-core가 끌어올 수 있다.

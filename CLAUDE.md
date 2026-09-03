@@ -20,6 +20,7 @@ AWS Bedrock(`claude-sonnet-5`) · LangGraph · uv 워크스페이스 · sqlite3
 | MCP 툴 · 프로세스 구성 | [docs/001/04-아키텍처](docs/001_기술스택-조사-에이전트-설계/04-아키텍처.md) |
 | 무엇을 잘라냈나 · 절단선 | [docs/001/06-범위와일정](docs/001_기술스택-조사-에이전트-설계/06-범위와일정.md) |
 | 설계가 왜 이렇게 됐나 | [docs/001/CHANGELOG](docs/001_기술스택-조사-에이전트-설계/CHANGELOG.md) |
+| `design` 단계가 하는 일 | [docs/001/stages/1-design](docs/001_기술스택-조사-에이전트-설계/stages/1-design.md) |
 
 문서는 한국어로 쓴다.
 
@@ -28,14 +29,21 @@ AWS Bedrock(`claude-sonnet-5`) · LangGraph · uv 워크스페이스 · sqlite3
 ## 구조
 
 ```
-interview → analyze → search → verify → evaluate → report
-   요청       요소       후보      판정      점수      HTML
- 구체화    +필요성   +dossier   +grounding  +순위
+interview → design → search → verify → evaluate → report
+   요청      구현설계   후보     판정     점수·순위   권장설계
+ 구체화   +결정지점  +dossier  +grounding +설계확정    HTML
+          +필요성
 
 사용자 ─▶ scout ──────▶ AWS Bedrock
              │
              └─ stdio ─▶ scout-net-mcp ─▶ 인터넷 (유일한 출구)
+                  ↑
+             design · search 둘 다 여기로만 나간다
 ```
+
+**답의 형태**: 후보 목록이 아니라 **"이렇게 만들면 되겠다"는 설계**다.
+`design`이 설계를 세우고 → 비교가 필요한 지점만 조사·판정하고 → `evaluate`가
+그 결과로 설계를 확정한다.
 
 **단계명 = 모듈 파일명 = CLI 인자.** `scout/stages/verify.py` ↔ `scout show <slug> verify`
 
@@ -47,6 +55,8 @@ interview → analyze → search → verify → evaluate → report
 | sqlite DDL·CRUD | `scout/store.py` (ORM 없음) |
 | 점수 공식 | `scout/rubric.py` |
 | 인용 검증 | `scout/grounding.py` |
+| 웹검색 승인 게이트 | `scout/approval.py` (`design`·`search` 공용) |
+| 에이전트 기록 파싱 | `scout/agentkit.py` (`design`·`search` 공용) |
 | 인터넷 호출 | `packages/scout-net-mcp/src/scout_net_mcp/providers/<소스>.py` |
 | HTML 템플릿 | `scout/templates/report.html.j2` |
 
@@ -70,7 +80,8 @@ interview → analyze → search → verify → evaluate → report
 5. **`maturity`·`risk`는 코드가 계산한다** — judge가 낡은 사실을 무시해도 계산이 잡는
    **이중 안전망**이다
 6. **`overall`은 `maturity`·`risk`의 평균이 아니다** — judge가 판단한다
-7. **`report`는 LLM을 쓰지 않는다** — `scout.db`를 jinja2로 렌더링만 한다
+7. **`report`는 LLM을 쓰지 않는다** — `scout.db`를 jinja2로 렌더링만 한다.
+   "이렇게 만들면 되겠다"는 문장은 `evaluate`가 쓴다 (`final_designs`)
 
 ### 설정
 
@@ -93,7 +104,18 @@ interview → analyze → search → verify → evaluate → report
     불변식 4가 지탱하던 주장이 뿌리에서 깨진다
 14. **`web_search`는 사람 승인을 거치고, 거부되면 원본 툴을 호출하지 않는다** —
     승인 문구만 띄우고 요청이 나가면 이 기능은 장식이다. `test_search_approval`이
-    이 배선을 검사한다. npm·PyPI·GitHub는 패키지명만 나가므로 승인 대상이 아니다
+    이 배선을 검사한다. npm·PyPI·GitHub는 패키지명만 나가므로 승인 대상이 아니다.
+    `design`도 같은 게이트를 쓴다 (예산만 다르다: 실행 전체 3회)
+15. **`design`의 툴 결과는 `facts`에 넣지 않는다** — dossier는 `search`만 만든다.
+    설계 중에 스쳐본 값을 섞으면 kind 라우팅·top-up을 거치지 않은 사실이 judge의 인용
+    대상이 되어, **grounding은 통과하는데 후보마다 근거 커버리지가 달라진다**.
+    불변식 4·13이 서 있는 자리가 무너진다. `test_design_no_facts`가 검사한다
+16. **통과한 결정 지점의 `search_hints`는 비어 있지 않다** — 영어 기술 어휘로 채운다.
+    비어도 파이프라인은 돌기 때문에(그게 `analyze` 시절의 상태였다) 조용히 원래대로
+    돌아간다. 비면 `gaps`에 기록한다
+17. **`needs_comparison`은 `necessity`와 다른 축이다** — "필요한가"와 "지금 비교해서
+    골라야 하는가"는 다르다. 둘 다 `search`를 건너뛰지만 보고서에는 **다른 섹션**으로
+    남는다 (필요 없는 것 / 이미 정해진 것)
 
 ---
 
@@ -175,7 +197,8 @@ except ProviderError as e:
 1. `scout_net_mcp/providers/<소스>.py` — 함수 + `Fact` 변환
 2. `server.py`에 툴 등록
 3. `SCOUT_EGRESS_ALLOWLIST` 기본값에 호스트 추가
-4. `scout/stages/search.py`의 **kind 라우팅**에 추가 (`library`/`software`/`method`)
+4. `scout/stages/search.py`의 **kind 라우팅**에 추가 (`library`/`software`/`method`).
+   `design`도 툴을 쓰지만 **사실은 저장하지 않으므로** 라우팅 대상이 아니다 (불변식 15)
 5. `fact_id`를 `<출처>.<항목>` 규칙으로
 6. 점수에 쓸 거면 `rubric.py` 공식 갱신
 7. 문서: `001/04-아키텍처.md` 툴 표 + `001/stages/2-search.md` 라우팅 표
@@ -206,12 +229,18 @@ except ProviderError as e:
 | `overall`을 `(maturity+risk)/2`로 계산 | 가중치 없는 가중 합산이다. judge가 판단해야 한다 (불변식 6) |
 | `maturity`도 LLM이 매기게 하기 | 이중 안전망이 깨진다. judge 하나에만 걸린다 (불변식 5) |
 | `search`의 dossier를 에이전트 응답에서 만들기 | 사실이 LLM 생성물이 된다. `ToolMessage` 원본에서 코드가 뽑는다 (불변식 13) |
+| `design`이 툴로 본 값을 `facts`에 저장하기 | 라우팅·top-up을 안 거친 사실이 dossier에 섞인다 (불변식 15) |
+| `search_hints`를 요소 이름으로 채우기 | `npm_search`에 한국어 추상어가 나간다. 영어 기술 어휘여야 한다 (불변식 16) |
+| `needs_comparison`을 `necessity`에 합치기 | "필요 없어서"와 "이미 정해져서"가 뭉개진다 (불변식 17) |
+| `combination_risks`에 `cons`를 옮겨 적기 | 사용자가 같은 문장을 두 번 읽는다. 조합해서 생긴 위험만 담는다 |
+| 근거 없이 `shape`·`data_flow`를 다시 쓰기 | `changes_from_design`이 "표현을 다듬었다"로 채워져 정말 바뀐 게 안 보인다 |
+| `designs`를 확정본으로 덮어쓰기 | "조사해보니 전제가 바뀌었다"가 사라진다. v1·v2 둘 다 남긴다 |
 | 승인 문구만 띄우고 툴은 그냥 호출하기 | 보안 기능이 장식이 된다. 거부는 원본 툴을 부르지 않아야 한다 (불변식 14) |
-| `report`에 LLM으로 요약 문장 생성 | 프롬프트 튜닝에 반나절이 사라진다. `solves_reason`을 인용한다 (불변식 7) |
+| `report`에 LLM으로 요약 문장 생성 | 프롬프트 튜닝에 반나절이 사라진다. `final_designs`·`solves_reason`을 인용한다 (불변식 7) |
 | `SCOUT_AWS_REGION` 같은 이름 만들기 | boto3 기본 자격 체인이 깨진다 (불변식 8) |
 | 조회 실패 시 예외 던지기 | 요소 하나가 전체를 죽인다. `gaps`에 기록한다 (불변식 11) |
 | 빈 섹션을 보고서에서 지우기 | 없는 걸 없다고 말하는 게 보고서의 일이다 (불변식 12) |
-| 테스트를 줄이기 | 5종은 커버리지가 아니라 **설계 주장의 증거**다 |
+| 테스트를 줄이기 | 6종은 커버리지가 아니라 **설계 주장의 증거**다 |
 | M0 확인 항목을 추측으로 채우기 | 모델 ID 형태 · DDG 패키지 이름 · boto3 버전은 `doctor`로 실측한다 |
 
 ---
@@ -220,12 +249,15 @@ except ProviderError as e:
 
 | 용어 | 뜻 |
 |---|---|
-| **요소** (`Component`) | 개발에 필요한 구성 단위. "실시간 메시지 전달", "인증" |
-| **후보** (`Candidate`) | 요소를 구현하는 방법·소프트웨어·라이브러리. `kind`로 구분 |
+| **설계** (`Architecture`) | `design`이 세우는 구현 설계. 구조·데이터 흐름·구축 순서 |
+| **요소 · 결정 지점** (`Component`) | 설계의 구성 단위이면서 **비교해서 정해야 할 지점**. "실시간 메시지 전달", "인증" |
+| **닫힌 결정** (`needs_comparison=false`) | 필요하지만 이미 정해진 것. 조사하지 않고 전제로 쓴다 |
+| **후보** (`Candidate`) | 결정 지점을 구현하는 방법·소프트웨어·라이브러리. `kind`로 구분 |
 | **dossier** | 후보 하나에 대해 모아둔 **사실 자료철**. judge가 인용할 수 있는 유일한 집합 |
 | **사실** (`Fact`) | dossier 항목 하나. `fact_id`(`npm.last_release` 등)를 갖는다 |
 | **판정** (`Verdict`) | judge가 후보에 내리는 결론. `solves_it` + 장단점 + `citations` |
 | **grounding** | judge의 인용이 dossier에 실제로 있는지 코드가 대조하는 검증 |
+| **권장 설계** (`FinalDesign`) | `evaluate`가 기본틀을 조사 결과로 **수정해 확정한** 설계. `Architecture`와 같은 이름의 `shape`·`data_flow`를 갖는 v2. 보고서 최상단 |
 
 비유는 **법정**이다 — 판사(judge)가 자료철(dossier)을 읽고 판정하고, 자료철 밖은 인용할 수 없다.
 
@@ -238,17 +270,22 @@ uv sync                           # 전체 설치 (Python 3.14 자동 조달)
 uv sync --package scout-net-mcp   # MCP 서버만 (사내 DMZ 배포 리허설)
 uv run ruff check --fix . && uv run ruff format .
 uv run ty check                   # 정보용. 게이트 아님 — 오탐 많으면 끈다
-uv run pytest                     # 5종
+uv run pytest                     # 6종
 
 uv run scout                      # 기본 진입점 — 설명을 대화형으로 입력받아 전체 파이프라인을 돈다
 uv run scout doctor               # AWS 자격·리전·모델·동시쿼터 확인
-uv run scout run "..."            # 개발용: 설명을 인자로 직접 넘긴다. 기본 규모: 요소 3개 · 후보 8~10개
-uv run scout run "..." --from verify --max-components 8
-uv run scout show <slug> verify
+uv run scout run "..."            # 개발용: 설명을 인자로 직접 넘긴다. 기본 규모: 결정 지점 3개 · 후보 8~10개
+uv run scout run "..." --stop-after design --auto-approve-search
+uv run scout show <slug> design
 ```
 
-`--from`이 가장 자주 쓰인다 — 프롬프트를 고칠 때 앞 단계를 다시 돌리지 않는다.
-그래서 저장이 인메모리가 아니라 파일이다.
+**`--from`은 아직 값만 검증하고 실제로 앞 단계를 건너뛰지 않는다** — 재개는 전적으로
+`SqliteSaver` 체크포인터가 한다. 그래서 프롬프트만 고쳐서 한 단계를 다시 돌리는 건 지금
+안 된다. **새 slug로 돌리거나** `runs/<slug>/checkpoints.sqlite`를 지운다
+(STEP-13 항목 4).
+
+저장이 파일인 이유는 그대로다 — dossier 수집이 가장 비싼 단계이므로 결과가 디스크에
+남아야 한다.
 
 ---
 
@@ -259,8 +296,8 @@ uv run scout show <slug> verify
 - **STEP을 끝내면** `docs/002/README.md` 체크리스트를 갱신한다
 - **시간이 부족하면** [절단선](docs/001_기술스택-조사-에이전트-설계/06-범위와일정.md)
   순서대로 버린다. `web_search`와 grounding 검출은 버리지 않는다
-- **테스트 5종은 줄이지 않는다** (`test_grounding` · `test_stale_regression` ·
-  `test_necessity_wiring` · `test_egress` · `test_search_approval`)
+- **테스트 6종은 줄이지 않는다** (`test_grounding` · `test_stale_regression` ·
+  `test_necessity_wiring` · `test_egress` · `test_search_approval` · `test_design_no_facts`)
 - **주석은 WHY만 남긴다.** 코드가 이미 보여주는 것(WHAT)을 말로 다시 풀어 쓰지
   않는다. 불변식의 이유·워크어라운드·놀랄 만한 동작처럼 코드만 보고는 알 수 없는
   것만 짧게 적는다. 긴 설계 논증(선택지 비교, 트레이드오프)은 코드가 아니라
