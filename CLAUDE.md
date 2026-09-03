@@ -213,7 +213,7 @@ except ProviderError as e:
 ## 명령
 
 ```bash
-uv sync                           # 전체 설치 (Python 3.12 자동 조달)
+uv sync                           # 전체 설치 (Python 3.14 자동 조달)
 uv sync --package scout-net-mcp   # MCP 서버만 (사내 DMZ 배포 리허설)
 uv run ruff check --fix . && uv run ruff format .
 uv run ty check                   # 정보용. 게이트 아님 — 오탐 많으면 끈다

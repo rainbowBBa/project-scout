@@ -2,7 +2,7 @@
 name = "scout-net-mcp"
 version = "0.1.0"
 description = "project-scout의 유일한 인터넷 출구 — MCP 서버"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.14,<3.15"
 dependencies = [
     "mcp",
     "httpx",

@@ -6,6 +6,27 @@
 
 ---
 
+## v16 (2026-09-03) — Python 3.12 → 3.14
+
+`.python-version`·두 패키지의 `requires-python`을 3.12에서 3.14로 올렸다.
+3.12로 고정했던 이유(`05-프로젝트관리.md` v15까지)는 "pydantic-core 등 네이티브
+확장의 3.14 휠 유무를 걱정할 필요가 없다"였다 — 당시엔 불확실성 회피가 목적이었다.
+
+전환 전에 PyPI를 실측 확인했다: `pydantic-core`(유일한 네이티브 확장 의존성)는
+버전 2.35.0부터 최신 2.48.0까지 cp314·cp314t win_amd64 휠이 전부 존재하고, 나머지
+의존성(langchain 계열·langgraph·pydantic·boto3·httpx·mcp·ddgs 등) 전부
+`requires_python`에 3.13/3.14를 막는 상한이 없었다. `uv sync`로 실제 설치해
+빌드 없이 90개 패키지가 그대로 깔리는 것도 확인했다 — 막는 요인이 없었다.
+
+`uv.lock`은 `uv lock`으로 재생성했다(수동 편집 없음). 코드 변경은 없다 — 3.14가
+새로 허용한 문법(PEP 758, `except A, B:` 괄호 생략)을 ruff `UP` 규칙이
+`stages/interview.py`에 자동 적용한 것 외에는 전부 동일하게 동작한다.
+
+`05-프로젝트관리.md`·`07-검증.md`의 "시스템 3.14는 건드리지 않는다"류 서술을
+이 버전 기준으로 갱신했다 — 이제 uv가 조달하는 버전도 3.14라 시스템과 일치한다.
+
+---
+
 ## v15 (2026-09-02) — web_search: DuckDuckGo → `ddgs` + Google backend
 
 STEP-04 구현 때 `providers/search.py`를 `ddgs.text(..., backend="duckduckgo")`로

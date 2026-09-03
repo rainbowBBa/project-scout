@@ -7,7 +7,7 @@
 
 ## 만들 것
 - `pyproject.toml` (루트) — `[tool.uv.workspace]` · `[tool.ruff]` · `[tool.ty]`
-- `.python-version` (3.12) · `.gitignore` · `README.md`
+- `.python-version` (3.14) · `.gitignore` · `README.md`
 - **`.env.example`** — [08-설정](../001_기술스택-조사-에이전트-설계/08-설정.md)의 전문 그대로. `.env`는 복사해서 채운다
 - `packages/scout/pyproject.toml` — httpx 없음, `pydantic-settings` 포함, `TID251` banned-api
 - `packages/scout-net-mcp/pyproject.toml` — langchain 없음
