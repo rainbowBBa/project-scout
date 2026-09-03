@@ -58,6 +58,7 @@ interview → design → search → verify → evaluate → report
 | 인용 검증 | `scout/grounding.py` |
 | 웹검색 승인 게이트 | `scout/approval.py` (`design`·`search` 공용) |
 | 개발용 LLM 캐시 | `scout/llm_cache.py` (기본 off — `SCOUT_LLM_CACHE=1`) |
+| 진행상황 한 줄 | `scout/progress.py` (양식은 `001/09-출력양식.md`가 정본) |
 | 에이전트 기록 파싱 | `scout/agentkit.py` (`design`·`search` 공용) |
 | 인터넷 호출 | `packages/scout-net-mcp/src/scout_net_mcp/providers/<소스>.py` |
 | HTML 템플릿 | `scout/templates/report.html.j2` |

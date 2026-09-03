@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 from scout import rubric, store
 from scout.llm import invoke_structured
+from scout.progress import step
 from scout.prompts import (
     EVALUATE_MISMATCH_PROMPT,
     EVALUATE_PROMPT,
@@ -383,10 +384,12 @@ async def _evaluate_component(
         return None, [gap]
 
     if len(passing) == 1:
+        step("통과 후보 1개 — 비교 없이 1위", subject=component_name)
         pick = solo_pick(component_name, passing[0])
         _save_pick(slug, pick, judged=False, runs_dir=runs_dir)
         return pick, []
 
+    step(f"채점 (통과 후보 {len(passing)})", subject=component_name)
     async with semaphore:
         pick = await asyncio.to_thread(
             judge_element,
@@ -595,6 +598,7 @@ def evaluate_node(state: ScoutState, *, llm: ChatBedrockConverse) -> dict:
 
     # 계산은 judge와 무관하게 전 후보에 대해 먼저 끝낸다 — 판정이 실패한 요소에서도
     # 계산된 점수는 남는다 (이중 안전망의 한쪽).
+    step(f"계산 점수 {len(candidates)}개 후보")
     computed = store_computed_scores(slug, candidates)
 
     components = state.get("components") or store.get_components(slug)
@@ -621,6 +625,7 @@ def evaluate_node(state: ScoutState, *, llm: ChatBedrockConverse) -> dict:
     architecture = state.get("architecture") or store.get_design(slug)
     if architecture is None:
         store.add_gap(slug, "evaluate", "설계 본문 없음 — 요소별 승자만으로 확정한다")
+    step("설계 확정")
     try:
         final = finalize_design(
             llm, architecture, picks, components, verdicts, state["interview"]

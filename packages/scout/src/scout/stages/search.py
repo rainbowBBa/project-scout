@@ -34,6 +34,7 @@ from scout.agentkit import (
 from scout.approval import SearchGate, default_approve, wrap_web_search
 from scout.llm import invoke_structured
 from scout.mcp_client import make_mcp_client
+from scout.progress import step, wrap_all
 from scout.prompts import (
     SEARCH_AGENT_SYSTEM_PROMPT,
     SEARCH_AGENT_TASK_PROMPT,
@@ -246,6 +247,10 @@ async def _search_component(
     settings: Settings,
 ) -> tuple[list[Candidate], bool]:
     now = datetime.now(UTC).isoformat()
+    step("조사 시작", subject=component.name)
+    # 진행 줄에 어느 요소인지 붙인다 — 요소를 병렬로 돌려 줄이 섞인다.
+    # 진행 표시가 안쪽, 승인 게이트가 바깥쪽 (001/09-출력양식.md).
+    tools = wrap_all(tools, subject=component.name)
     # 웹검색 예산은 요소마다 따로 준다 — 한 요소가 전체 예산을 다 먹으면 안 된다.
     if "web_search" in tools:
         tools = {
@@ -280,6 +285,9 @@ async def _search_component(
         agent, task, settings.scout_search_recursion_limit
     )
     calls = collect_tool_calls(messages)
+    if truncated:
+        step("툴 탐색 한도 도달 — 모은 기록으로 후보를 뽑는다", subject=component.name)
+    step("후보 추출", subject=component.name)
 
     parsed, raw = invoke_structured(
         SEARCH_EXTRACT_PROMPT,
@@ -297,6 +305,7 @@ async def _search_component(
     candidates = []
     for draft in parsed.candidates[:max_candidates]:
         facts = facts_for_candidate(calls, draft.name, now)
+        step(f"{draft.name} dossier 보강", subject=component.name)
         extra, gaps = await topup_dossier(draft.name, draft.kind, facts, tools, now)
         candidates.append(
             Candidate(
@@ -321,6 +330,7 @@ async def _run_search(
 ) -> tuple[list[Candidate], list[str]]:
     tools_list = await make_mcp_client().get_tools()
     tools = {t.name: t for t in tools_list}
+    step(f"결정 지점 {len(components)}개 조사 시작")
 
     semaphore = asyncio.Semaphore(settings.scout_mcp_concurrency)
     gaps: list[str] = []

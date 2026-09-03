@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING, Any
 import typer
 from langchain_core.tools import StructuredTool
 
+from scout.progress import step
+
 if TYPE_CHECKING:
     from langchain_core.tools import BaseTool
 
@@ -29,7 +31,8 @@ _MAX_REJECTIONS = 3
 # 전체에 3회를 쓴다 — 설계는 요소별로 펼치지 않고 한 번 돌기 때문이다.
 DEFAULT_WEB_SEARCH_BUDGET = 5
 
-APPROVAL_NOTICE = '"{query}" 키워드로 인터넷 검색을 하려고 합니다. 확인 바랍니다.'
+# 열 2의 `? ` — 사람에게 묻는 줄 (001/09-출력양식.md). `: `는 typer가 붙인다.
+APPROVAL_NOTICE = '  ? 인터넷 검색 "{query}" — 허용할까요?'
 
 
 @dataclass
@@ -46,20 +49,22 @@ class NonInteractive(Exception):
 
 
 def default_approve(query: str) -> Approval:
-    typer.echo("")
-    typer.echo(APPROVAL_NOTICE.format(query=query))
     try:
-        if typer.confirm("승인하시겠습니까?", default=False):
+        if typer.confirm(APPROVAL_NOTICE.format(query=query), default=False):
             return Approval(approved=True)
-        reason = typer.prompt("거부 사유를 입력하세요", default="", show_default=False)
+        reason = typer.prompt("  ? 거부 사유", default="", show_default=False)
     except EOFError, typer.Abort:  # PEP 758 (3.14) — 괄호 없는 다중 예외
         raise NonInteractive from None
     return Approval(approved=False, reason=reason.strip() or "(사유 없음)")
 
 
 def auto_approve(query: str) -> Approval:
-    """`--auto-approve-search` 전용. 무엇이 나갔는지는 그대로 찍는다."""
-    typer.echo(APPROVAL_NOTICE.format(query=query) + " → 자동 승인")
+    """`--auto-approve-search` 전용. 질문이 아니므로 `·` 진행 줄이다.
+
+    무엇이 나갔는지는 그대로 찍는다 — 승인을 건너뛴다고 내용을 감추면 게이트의
+    의미가 준다.
+    """
+    step(f'인터넷 검색 "{query}" — 자동 승인')
     return Approval(approved=True)
 
 

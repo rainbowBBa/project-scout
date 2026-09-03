@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from scout import grounding, store
 from scout.llm import invoke_structured
+from scout.progress import step
 from scout.prompts import (
     VERIFY_PROMPT,
     VERIFY_REGROUND_PROMPT,
@@ -162,6 +163,9 @@ async def _verify_candidate(
                 f"{', '.join(violations)}",
             )
 
+    solved = "해결" if verdict.solves_it else "미해결"
+    step(f"{solved} / {verdict.confidence}", subject=candidate.name)
+
     degraded = grounding.degrade_if_uncited(verdict)
     if degraded is not verdict:
         # grounding_violations를 다시 넘긴다 — 기본값으로 upsert하면 방금 기록한
@@ -185,6 +189,7 @@ async def _run_verify(
     runs_dir: str | None = None,
 ) -> tuple[list[Verdict], list[str]]:
     by_name = {c.name: c for c in components}
+    step(f"후보 {len(candidates)}개 판정 시작")
     semaphore = asyncio.Semaphore(concurrency)
 
     results = await asyncio.gather(

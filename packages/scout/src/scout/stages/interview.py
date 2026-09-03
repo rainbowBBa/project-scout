@@ -54,7 +54,9 @@ class NonInteractive(Exception):
 
 def _default_ask(question: str) -> str:
     try:
-        return typer.prompt(f"인터뷰 봇: {question}", default="", show_default=False)
+        # 열 2의 `? ` — 화자를 밝히지 않는다. `?`가 "당신이 답할 차례"를 말하고
+        # 들여쓰기가 [인터뷰] 소속을 말한다 (001/09-출력양식.md).
+        return typer.prompt(f"  ? {question}", default="", show_default=False)
     except EOFError, typer.Abort:
         raise NonInteractive from None
 

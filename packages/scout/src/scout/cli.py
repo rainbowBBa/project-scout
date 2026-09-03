@@ -244,7 +244,7 @@ def _run_pipeline(
             stream_mode="updates",
         ):
             node_name, node_output = next(iter(update.items()))
-            _print_stage_summary(node_name, node_output)
+            _print_stage_summary(node_name, node_output, slug)
             typer.echo(f"[{STAGE_LABELS[node_name]}] 단계를 종료합니다.")
             if node_name == "report":
                 report_path = node_output["report_path"]
@@ -258,7 +258,16 @@ def _run_pipeline(
     )
 
 
-def _print_stage_summary(node_name: str, node_output: dict) -> None:
+def _more(slug: str, stage: str) -> str:
+    """ "자세히" 힌트 — 한 형태만 쓰고 **실제 slug**를 넣는다.
+
+    `<slug>` 자리표시자를 찍으면 사용자가 바꿔 써야 하는 걸 모르고 그대로 복사해
+    실패한다. 화면에 찍는 명령은 붙여넣으면 돌아가야 한다 (001/09-출력양식.md).
+    """
+    return f"(자세히: scout show {slug} {stage})"
+
+
+def _print_stage_summary(node_name: str, node_output: dict, slug: str) -> None:
     if node_name == "interview":
         interview = node_output["interview"]
         typer.echo(f"  구체화된 설명: {interview.refined_brief}")
@@ -274,10 +283,7 @@ def _print_stage_summary(node_name: str, node_output: dict) -> None:
         typer.echo(f"  설계: {architecture.summary}")
         if architecture.build_order:
             typer.echo(f"  무엇부터: {' → '.join(architecture.build_order)}")
-        typer.echo(
-            f"  통과 {len(components)}개 (닫힌 결정·걸러진 것 포함 전체 목록은 "
-            "`scout show <slug> design`)"
-        )
+        typer.echo(f"  통과 {len(components)}개 {_more(slug, 'design')}")
         for c in components:
             typer.echo(
                 f"    [{c.necessity}] {c.name} ({c.kind}) — priority {c.priority}"
@@ -286,39 +292,35 @@ def _print_stage_summary(node_name: str, node_output: dict) -> None:
             typer.echo(f"      힌트: {', '.join(c.search_hints) or '(없음)'}")
     elif node_name == "search":
         candidates = node_output["candidates"]
-        typer.echo(
-            f"  후보 {len(candidates)}개 (사실 원본은 `scout show <slug> search`)"
-        )
+        typer.echo(f"  후보 {len(candidates)}개 {_more(slug, 'search')}")
         for c in candidates:
             fact_ids = ", ".join(f.id for f in c.dossier) or "(없음)"
-            typer.echo(f"    {c.name} [{c.kind}] — {c.component}")
+            typer.echo(f"    [{c.kind}] {c.name} — {c.component}")
             typer.echo(f"      사실 {len(c.dossier)}개: {fact_ids}")
             for gap in c.dossier_gaps:
-                typer.echo(f"      gap: {gap}")
+                typer.echo(f"      못 구한 것: {gap}")
     elif node_name == "verify":
         verdicts = node_output["verdicts"]
         solved = sum(1 for v in verdicts if v.solves_it)
         typer.echo(
-            f"  판정 {len(verdicts)}개 — 해결 {solved} / 미해결 {len(verdicts) - solved} "
-            "(전문은 `scout show <slug> verify`)"
+            f"  판정 {len(verdicts)}개 — 해결 {solved} / "
+            f"미해결 {len(verdicts) - solved} {_more(slug, 'verify')}"
         )
         for v in verdicts:
-            mark = "O" if v.solves_it else "X"
+            mark = "해결" if v.solves_it else "미해결"
             typer.echo(
                 f"    [{mark}] {v.candidate} — confidence {v.confidence} "
                 f"(인용 {len(v.citations)}건)"
             )
             typer.echo(f"      이유: {v.solves_reason}")
             for claim in v.unsupported_claims:
-                typer.echo(f"      근거없음: {claim}")
+                typer.echo(f"      근거 없음: {claim}")
     elif node_name == "evaluate":
         picks = node_output["element_picks"]
-        typer.echo(
-            f"  요소 {len(picks)}개 순위 산정 "
-            "(점수 전문은 `scout show <slug> evaluate`)"
-        )
+        typer.echo(f"  요소 {len(picks)}개 순위 산정 {_more(slug, 'evaluate')}")
         for pick in picks:
-            typer.echo(f"    [{pick.component}] 1위 {pick.winner} ({pick.margin})")
+            close = " (근접)" if pick.margin == "close" else ""
+            typer.echo(f"    [1위] {pick.winner} — {pick.component}{close}")
             typer.echo(f"      선정 이유: {pick.winner_reason}")
             typer.echo(f"      순위: {' > '.join(pick.ranking)}")
             for score in pick.scores:
@@ -328,7 +330,9 @@ def _print_stage_summary(node_name: str, node_output: dict) -> None:
             typer.echo(f"      2위 참고: {pick.runner_up_note}")
         final = node_output.get("final_design")
         if final is None:
-            typer.echo("  확정 설계: 없음 (`scout show <slug> evaluate`의 gaps 참고)")
+            typer.echo(
+                f"  확정 설계: 없음 — 이유는 gaps 참고 {_more(slug, 'evaluate')}"
+            )
         else:
             typer.echo(f"\n  확정 설계: {final.summary}")
             typer.echo(f"    구조: {final.shape}")
@@ -345,11 +349,14 @@ def _print_stage_summary(node_name: str, node_output: dict) -> None:
                 typer.echo(f"    미해결 {len(final.unresolved)}건")
     elif node_name == "report":
         summary = node_output["report_summary"]
+        # 고정폭 정렬을 쓰지 않는다 — 한글 1자가 터미널에서 2칸이라 어긋난다
+        # (001/09-출력양식.md).
         for row in summary["stack"]:
-            margin_note = "  (근접)" if row["margin"] == "close" else ""
+            close = ", 근접" if row["margin"] == "close" else ""
             overall = "-" if row["overall"] is None else str(row["overall"])
             typer.echo(
-                f"  {row['component']:<18} {row['candidate']:<20} {overall}{margin_note}"
+                f"    [1위] {row['candidate']} — {row['component']} "
+                f"(overall {overall}{close})"
             )
         typer.echo(
             f"\n  걸러낸 요소 {summary['filtered_count']}개 · "
@@ -380,15 +387,14 @@ def _print_pipeline_footer(
         typer.echo(f"[개발] {cache.summary()}")
     if report_path is not None:
         typer.echo(f"리포트: {report_path}")
-    elif stopped_early:
-        typer.echo(
-            f"지정한 단계까지 실행을 마쳤습니다. `scout show {slug} <단계>`로 결과를 볼 수 있습니다."
-        )
-    else:
-        typer.echo(
-            f"다음 단계는 아직 구현되지 않았습니다. "
-            f"`scout show {slug} <단계>`로 지금까지 결과를 볼 수 있습니다."
-        )
+        return
+    # 백틱을 찍지 않고 `<단계>` 자리표시자도 쓰지 않는다 — 붙여넣으면 돌아가야 한다.
+    # 실제로 볼 수 있는 마지막 단계를 넣는다 (001/09-출력양식.md).
+    last = STAGE_ORDER[-2] if stopped_early else "evaluate"
+    typer.echo(
+        f"{'지정한 단계까지' if stopped_early else '여기까지'} 실행을 마쳤습니다. "
+        f"{_more(slug, last)}"
+    )
 
 
 @app.command()

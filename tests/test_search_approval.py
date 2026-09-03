@@ -111,9 +111,15 @@ async def test_non_interactive_blocks_without_prompting():
 
 
 def test_approval_notice_names_the_query():
-    assert APPROVAL_NOTICE.format(query="socket.io alternative") == (
-        '"socket.io alternative" 키워드로 인터넷 검색을 하려고 합니다. 확인 바랍니다.'
-    )
+    """무엇이 나가는지 문구에 들어가야 한다 — 질의를 감추면 게이트가 장식이 된다.
+
+    문구 자체는 출력 양식(001/09-출력양식.md)을 따라 바뀔 수 있다. 검사하는 것은
+    형식이 아니라 **질의가 사람에게 보인다**는 것이다.
+    """
+    notice = APPROVAL_NOTICE.format(query="socket.io alternative")
+
+    assert "socket.io alternative" in notice
+    assert notice.startswith("  ? "), "사람에게 묻는 줄은 열 2의 `? `로 시작한다"
 
 
 # ── 사실은 툴 원본에서만 나온다 ──────────────────────────────────────────

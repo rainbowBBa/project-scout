@@ -26,6 +26,7 @@ from scout.agentkit import build_transcript, collect_tool_calls, run_agent_loop
 from scout.approval import SearchGate, default_approve, wrap_web_search
 from scout.llm import invoke_structured
 from scout.mcp_client import make_mcp_client
+from scout.progress import step, wrap_all
 from scout.prompts import (
     DESIGN_AGENT_SYSTEM_PROMPT,
     DESIGN_AGENT_TASK_PROMPT,
@@ -68,9 +69,13 @@ async def run_design(
         checkpointer=False,
     )
     prompt_input = _prompt_input(interview)
+    step(f"설계 탐색 시작 — 툴 최대 {recursion_limit} superstep")
     messages, truncated = await run_agent_loop(
         agent, DESIGN_AGENT_TASK_PROMPT.format(**prompt_input), recursion_limit
     )
+    if truncated:
+        step("툴 탐색 한도 도달 — 여기까지 모은 기록으로 설계를 뽑는다")
+    step("설계 추출")
 
     design, raw = invoke_structured(
         DESIGN_EXTRACT_PROMPT,
@@ -139,6 +144,9 @@ async def _run(
     settings: Settings,
 ) -> tuple[Design, bool]:
     tools = {t.name: t for t in await make_mcp_client().get_tools()}
+    # 진행 표시가 안쪽, 승인 게이트가 바깥쪽 — 거부된 검색의 진행 줄은 찍히지 않는다
+    # (001/09-출력양식.md).
+    tools = wrap_all(tools)
     if "web_search" in tools:
         tools = {
             **tools,
