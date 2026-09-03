@@ -94,12 +94,16 @@ interview → analyze → search → verify → evaluate → report
 ### LLM 구조화 출력
 
 ```python
-from scout.prompts import STAGE_PROMPT   # prompts.py — 프롬프트 문자열은 여기, 조립 로직만 stages/에
+from scout.llm import invoke_structured
+from scout.prompts import (
+    STAGE_PROMPT,
+    STAGE_RETRY_HINT,
+)  # prompts.py — 프롬프트 문자열은 여기, 조립 로직만 stages/에
 
 structured_llm = llm.with_structured_output(Model, include_raw=True)
-chain = STAGE_PROMPT | structured_llm    # prompt | llm — 스키마는 API에 tool로 전달, 프롬프트엔 안 적는다
-result = chain.invoke(prompt_input)
-# result["parsed"] 가 None이면 raw 를 잡아 1회 재시도. Verdict 처럼 필드 많은 스키마에서 특히 필요
+parsed, raw = invoke_structured(STAGE_PROMPT, structured_llm, prompt_input, STAGE_RETRY_HINT)
+if parsed is None:  # 재시도까지 실패 — Verdict 처럼 필드 많은 스키마에서 특히 필요
+    raise RuntimeError(f"... 구조화 출력 파싱 실패: {raw}")
 ```
 
 프롬프트에는 **앵커(반례)를 박는다.** "판단해라"만 쓰면 judge가 후하게 준다 —
@@ -109,7 +113,7 @@ result = chain.invoke(prompt_input)
 ### MCP 툴 호출 — 코드가 부른다
 
 ```python
-result = await tool.ainvoke({"name": candidate})   # LLM이 툴을 고르지 않는다
+result = await tool.ainvoke({"name": candidate})  # LLM이 툴을 고르지 않는다
 ```
 
 `search` 2턴만 MCP를 쓰고, LLM은 질의를 만들고(1턴) 결과를 정리(3턴)한다.
@@ -118,17 +122,17 @@ result = await tool.ainvoke({"name": candidate})   # LLM이 툴을 고르지 않
 ### fan-out
 
 ```python
-Send("verify_candidate", {...})                    # 요소별 · 후보별
-Annotated[list, operator.add]                       # 리듀스
-Semaphore(settings.scout_llm_concurrency)           # LLM 4
-Semaphore(settings.scout_mcp_concurrency)           # MCP 8 (서버 레이트리미터와 이중 방어)
+Send("verify_candidate", {...})  # 요소별 · 후보별
+Annotated[list, operator.add]  # 리듀스
+Semaphore(settings.scout_llm_concurrency)  # LLM 4
+Semaphore(settings.scout_mcp_concurrency)  # MCP 8 (서버 레이트리미터와 이중 방어)
 ```
 
 ### 저장
 
 ```python
-store.upsert_facts(slug, candidate, facts)          # sqlite3 직접. ORM 없음
-Model.model_validate(row) / model.model_dump()      # Pydantic ↔ dict
+store.upsert_facts(slug, candidate, facts)  # sqlite3 직접. ORM 없음
+Model.model_validate(row) / model.model_dump()  # Pydantic ↔ dict
 ```
 
 `fact_id`는 `<출처>.<항목>` 규칙 — `npm.last_release`, `gh.archived`, `web.3`.
@@ -139,7 +143,7 @@ Model.model_validate(row) / model.model_dump()      # Pydantic ↔ dict
 try:
     facts = await fetch(...)
 except ProviderError as e:
-    store.add_gap(slug, candidate, f"{source} 조회 실패: {e}")   # 예외를 던지지 않는다
+    store.add_gap(slug, candidate, f"{source} 조회 실패: {e}")  # 예외를 던지지 않는다
 ```
 
 ---
@@ -236,6 +240,11 @@ uv run scout show <slug> verify
   순서대로 버린다. `web_search`와 grounding 검출은 버리지 않는다
 - **테스트 4종은 줄이지 않는다**
   (`test_grounding` · `test_stale_regression` · `test_necessity_wiring` · `test_egress`)
+- **주석은 WHY만 남긴다.** 코드가 이미 보여주는 것(WHAT)을 말로 다시 풀어 쓰지
+  않는다. 불변식의 이유·워크어라운드·놀랄 만한 동작처럼 코드만 보고는 알 수 없는
+  것만 짧게 적는다. 긴 설계 논증(선택지 비교, 트레이드오프)은 코드가 아니라
+  `docs/001`의 해당 파일과 `CHANGELOG.md`에 쓴다 — 코드 주석에서는 그 문서를
+  가리키는 한 줄로 충분하다
 - **불확실한 건 단정하지 않는다.** `doctor`로 실측한 값을 `.env`에 고정하고,
   아직 모르는 건 문서에 "M0에서 확인"으로 남긴다
 - **`.env` 파일을 절대 직접 읽지 않는다.** `cat`·`Read`·`grep` 등 어떤 방식으로도 열어보지

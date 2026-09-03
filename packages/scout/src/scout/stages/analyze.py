@@ -10,9 +10,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from langchain_core.messages import HumanMessage
-
 from scout import store
+from scout.llm import invoke_structured
 from scout.prompts import ANALYZE_PROMPT, ANALYZE_RETRY_HINT
 from scout.schemas import Analysis, Component
 
@@ -35,21 +34,12 @@ def _build_prompt_input(interview: Interview) -> dict[str, str]:
 def run_analyze(llm: ChatBedrockConverse, interview: Interview) -> Analysis:
     prompt_input = _build_prompt_input(interview)
 
-    # prompt | llm — 스키마는 프롬프트 텍스트가 아니라 API에 tool로 전달된다
     structured_llm = llm.with_structured_output(Analysis, include_raw=True)
-    chain = ANALYZE_PROMPT | structured_llm
-
-    result = chain.invoke(prompt_input)
-    analysis = result["parsed"]
+    analysis, raw = invoke_structured(
+        ANALYZE_PROMPT, structured_llm, prompt_input, ANALYZE_RETRY_HINT
+    )
     if analysis is None:
-        retry_messages = [
-            *ANALYZE_PROMPT.invoke(prompt_input).to_messages(),
-            HumanMessage(ANALYZE_RETRY_HINT),
-        ]
-        result = structured_llm.invoke(retry_messages)
-        analysis = result["parsed"]
-    if analysis is None:
-        raise RuntimeError(f"Analysis 구조화 출력 파싱 실패: {result['raw']}")
+        raise RuntimeError(f"Analysis 구조화 출력 파싱 실패: {raw}")
     return analysis
 
 

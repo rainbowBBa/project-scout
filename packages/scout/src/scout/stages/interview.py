@@ -29,6 +29,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.graph import END, START, StateGraph
 
 from scout import store
+from scout.llm import invoke_structured
 from scout.prompts import (
     INTERVIEW_SYNTHESIS_PROMPT,
     INTERVIEW_SYNTHESIS_RETRY_HINT,
@@ -73,17 +74,12 @@ def _decide_next_turn(
 ) -> InterviewTurn | None:
     """다음 질문 또는 종료 여부를 판단한다. 재시도까지 실패하면 None — 호출부가 종료로 처리한다."""
     structured_llm = llm.with_structured_output(InterviewTurn, include_raw=True)
-    chain = INTERVIEW_TURN_PROMPT | structured_llm
-
-    result = chain.invoke({"history": history})
-    turn = result["parsed"]
-    if turn is None:
-        retry_messages = [
-            *INTERVIEW_TURN_PROMPT.invoke({"history": history}).to_messages(),
-            HumanMessage(INTERVIEW_TURN_RETRY_HINT),
-        ]
-        result = structured_llm.invoke(retry_messages)
-        turn = result["parsed"]
+    turn, _raw = invoke_structured(
+        INTERVIEW_TURN_PROMPT,
+        structured_llm,
+        {"history": history},
+        INTERVIEW_TURN_RETRY_HINT,
+    )
     return turn
 
 
@@ -96,19 +92,14 @@ def _synthesize_interview(
     prompt_input = {"history": history, "gap_notes": gap_block}
 
     structured_llm = llm.with_structured_output(Interview, include_raw=True)
-    chain = INTERVIEW_SYNTHESIS_PROMPT | structured_llm
-
-    result = chain.invoke(prompt_input)
-    interview = result["parsed"]
+    interview, raw = invoke_structured(
+        INTERVIEW_SYNTHESIS_PROMPT,
+        structured_llm,
+        prompt_input,
+        INTERVIEW_SYNTHESIS_RETRY_HINT,
+    )
     if interview is None:
-        retry_messages = [
-            *INTERVIEW_SYNTHESIS_PROMPT.invoke(prompt_input).to_messages(),
-            HumanMessage(INTERVIEW_SYNTHESIS_RETRY_HINT),
-        ]
-        result = structured_llm.invoke(retry_messages)
-        interview = result["parsed"]
-    if interview is None:
-        raise RuntimeError(f"Interview 구조화 출력 파싱 실패: {result['raw']}")
+        raise RuntimeError(f"Interview 구조화 출력 파싱 실패: {raw}")
 
     # 코드 쪽 안전망 — judge가 gap_notes를 놓쳐도 미응답 사실 자체는 항상 남는다.
     merged_assumptions = list(dict.fromkeys([*interview.assumptions, *gap_notes]))

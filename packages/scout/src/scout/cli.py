@@ -58,8 +58,7 @@ def callback(ctx: typer.Context) -> None:
     # pydantic-settings의 env_file 로딩은 Settings 필드에만 값을 채우고 os.environ은 건드리지 않는다.
     load_dotenv()
     if ctx.invoked_subcommand is None:
-        # 서브커맨드 없이 `uv run scout`만 실행한 경우 — 기본 진입점. 설명은
-        # 대화형으로 받는다 (02-파이프라인.md "실행 흐름").
+        # 기본 진입점 — 설명은 대화형으로 받는다 (02-파이프라인.md "실행 흐름").
         _run_pipeline(None, Stage.interview, None, None, None)
 
 

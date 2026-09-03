@@ -278,21 +278,22 @@ def add_gap(
         )
 
 
+def _fact_from_row(row: sqlite3.Row) -> Fact:
+    return Fact(
+        id=row["fact_id"],
+        label=row["label"],
+        value=row["value"],
+        url=row["url"],
+        retrieved_at=row["retrieved_at"],
+    )
+
+
 def get_facts(slug: str, candidate: str, *, runs_dir: str | None = None) -> list[Fact]:
     with _conn(slug, runs_dir) as conn:
         rows = conn.execute(
             "SELECT * FROM facts WHERE slug = ? AND candidate = ?", (slug, candidate)
         ).fetchall()
-        return [
-            Fact(
-                id=r["fact_id"],
-                label=r["label"],
-                value=r["value"],
-                url=r["url"],
-                retrieved_at=r["retrieved_at"],
-            )
-            for r in rows
-        ]
+        return [_fact_from_row(r) for r in rows]
 
 
 def get_gaps(slug: str, candidate: str, *, runs_dir: str | None = None) -> list[str]:
@@ -333,16 +334,7 @@ def get_candidates(
                     name=r["name"],
                     kind=r["kind"],
                     what_it_is=r["what_it_is"],
-                    dossier=[
-                        Fact(
-                            id=f["fact_id"],
-                            label=f["label"],
-                            value=f["value"],
-                            url=f["url"],
-                            retrieved_at=f["retrieved_at"],
-                        )
-                        for f in facts
-                    ],
+                    dossier=[_fact_from_row(f) for f in facts],
                     dossier_gaps=[g["note"] for g in gaps],
                 )
             )
