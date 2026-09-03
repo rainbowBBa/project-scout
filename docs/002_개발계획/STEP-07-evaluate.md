@@ -15,19 +15,22 @@
   (릴리스 최근성·커밋 활성은 둘 다 "최근성"이다) 여기서 채우고 간다
 
 ## 완료 기준
-- [ ] `scores` 에 `maturity`·`risk`(`computed`) + `overall`(`judged`) 3기준이 들어간다
-- [ ] 숫자가 없는 후보는 `score=NULL`, `source="unavailable"` (0이 아니다)
-- [ ] `maturity`가 세 신호의 **최소값**을 취한다 (평균이 아니다)
+- [x] `scores` 에 `maturity`·`risk`(`computed`) + `overall`(`judged`) 3기준이 들어간다
+- [x] 숫자가 없는 후보는 `score=NULL`, `source="unavailable"` (0이 아니다)
+- [x] `maturity`가 세 신호의 **최소값**을 취한다 (평균이 아니다)
 - [ ] **`overall`이 `maturity`·`risk`의 평균이 아니다** — `maturity=5`인데 요구 미충족 케이스에서 `overall`이 4 이상 나오면 프롬프트 실패
 - [ ] 후보마다 `score_reason`에 `fact_id` 또는 verdict가 인용된다
-- [ ] `picks` 에 `winner` `winner_reason` `runner_up_note` `margin` 이 채워진다
+- [x] `picks` 에 `winner` `winner_reason` `runner_up_note` `margin` 이 채워진다
 - [ ] `winner_reason`에 **제약 인용 + 2위와의 점수 차이** 둘 다 들어간다
-- [ ] `margin`이 `overall` 차이로 `decisive`/`close`를 낸다
-- [ ] 통과 후보가 1개면 LLM을 부르지 않고 그대로 1위
-- [ ] `gh.contributors`가 dossier에 들어오고 `maturity`가 그 값을 쓴다
-- [ ] 신호가 일부만 있으면 **있는 신호만의 최소값** — 없는 신호를 5나 1로 채우지 않는다
-- [ ] `osv.*`가 없으면 취약점 항목을 건너뛴다 (0건으로 간주해 5를 주지 않는다)
-- [ ] 탈락 후보도 `maturity`·`risk`가 `scores`에 남는다 (이중 안전망의 증거)
+- [x] `margin`이 `overall` 차이로 `decisive`/`close`를 낸다
+- [x] 통과 후보가 1개면 LLM을 부르지 않고 그대로 1위
+- [x] `gh.contributors`가 dossier에 들어오고 `maturity`가 그 값을 쓴다
+- [x] 신호가 일부만 있으면 **있는 신호만의 최소값** — 없는 신호를 5나 1로 채우지 않는다
+- [x] `osv.*`가 없으면 취약점 항목을 건너뛴다 (0건으로 간주해 5를 주지 않는다)
+- [x] 탈락 후보도 `maturity`·`risk`가 `scores`에 남는다 (이중 안전망의 증거)
+
+남은 세 항목은 judge의 실제 응답이 있어야 판별된다 — 프롬프트에 반례를 박고 어긋나면
+`gaps`에 경고를 남기는 배선까지 끝냈고, 값 자체는 STEP 09 E2E에서 확인한다.
 
 ## 막히면
 `winner`가 `ranking[0]`과 불일치하면 구조 검증에서 잡고 1회 재시도.

@@ -255,6 +255,7 @@ _PYPI_FIELDS = (
 _GH_FIELDS = (
     ("gh.last_commit", "마지막 커밋", "last_commit_at"),
     ("gh.archived", "archived", "archived"),
+    ("gh.contributors", "기여자 수", "contributors"),
     ("gh.stars", "스타", "stars"),
     ("gh.issue_close_rate", "이슈 처리율", "issue_resolution_rate"),
 )

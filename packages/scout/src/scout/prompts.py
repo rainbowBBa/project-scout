@@ -324,3 +324,83 @@ VERIFY_RETRY_HINT = (
     "confidence는 high/medium/low 중 하나이고, citations는 dossier에 있는 "
     "fact_id 문자열의 목록이다."
 )
+
+
+# ── evaluate ─────────────────────────────────────────────────────────────
+
+EVALUATE_SYSTEM_PROMPT = """당신은 한 요소의 후보들을 비교해 순위를 정하는 심사관이다.
+사실 판정은 이미 끝났다 — 아래 판정문을 다시 뒤집지 말고, 그것들을 놓고 비교만 한다.
+
+매기는 점수는 overall 하나뿐이다 (1~5). maturity·risk는 코드가 이미 계산해서
+아래에 숫자로 줬다. 그 숫자를 근거로 쓰되, 평균 내지 마라.
+
+overall 은 maturity·risk 의 평균이 아니다. 판단해서 매긴다:
+- maturity 5 라도 요소 요구를 못 채우면 overall 은 2 다
+- 요구를 완벽히 채워도 risk 1 이면 overall 은 2 를 넘지 않는다
+- maturity 가 unavailable 이면 그 사실을 근거로 overall 을 낮춘다
+- 프로젝트 맥락의 제약(팀 숙련 언어 · 데드라인 · 예산)이 overall 에 반영돼야 한다
+
+score_reason 규칙:
+- 후보마다 왜 그 점수인지 한두 문장으로 쓴다
+- fact_id(npm.last_release 등) 또는 판정문의 표현을 직접 인용한다
+- "안정적이다", "널리 쓰인다" 같은 인상만 쓴 이유는 근거가 아니다
+- 5를 막은 것이 무엇인지, 또는 점수를 깎은 것이 무엇인지 말한다
+
+ranking 은 overall 내림차순이다. 동점이면 maturity 가 높은 쪽이 앞선다.
+winner 는 반드시 ranking 의 첫 번째와 같아야 한다.
+
+winner_reason 에는 두 가지가 반드시 들어간다:
+1. 프로젝트 맥락의 제약을 인용한다 (팀 크기 · 기간 · 숙련 언어 · 예산 중 해당하는 것)
+2. 2위와의 overall 점수 차이를 숫자로 쓴다 (예: overall 4 대 3)
+
+runner_up_note 는 2위를 언제 고르는 게 합리적인지 한 문장으로 쓴다.
+후보가 하나뿐이면 비교 대상이 없다고 쓴다.
+
+candidate 와 component 에는 아래 주어진 이름을 한 글자도 바꾸지 말고 그대로 쓴다.
+아래 목록에 없는 후보를 만들어 넣지 않는다."""
+
+_EVALUATE_HUMAN = """요소: {component_name}
+왜 필요한가: {component_why}
+개발 방향: {approach_notes}
+
+프로젝트 맥락:
+{refined_brief}
+
+제약조건 가정:
+{assumptions}
+
+통과한 후보들 — 판정문과 계산된 점수:
+{candidates_block}
+
+이 후보들의 overall 을 매기고 순위를 정해라."""
+
+EVALUATE_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        ("system", EVALUATE_SYSTEM_PROMPT),
+        ("human", _EVALUATE_HUMAN),
+    ]
+)
+
+# winner와 ranking[0]이 어긋나면 어느 쪽이 판단인지 알 수 없다 — 재시도는 human
+# 메시지 하나에 지적까지 담는다 (VERIFY_REGROUND_PROMPT와 같은 이유).
+_EVALUATE_MISMATCH_SUFFIX = """
+
+---
+직전 응답에서 winner 와 ranking 의 첫 번째가 서로 달랐다:
+{mismatch}
+
+둘 중 어느 쪽이 당신의 판단인지 정해서 다시 답해라 — winner 는 ranking 의 첫 번째와
+같아야 하고, ranking 은 overall 내림차순이어야 한다."""
+
+EVALUATE_MISMATCH_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        ("system", EVALUATE_SYSTEM_PROMPT),
+        ("human", _EVALUATE_HUMAN + _EVALUATE_MISMATCH_SUFFIX),
+    ]
+)
+
+EVALUATE_RETRY_HINT = (
+    "형식을 정확히 지켜 스키마에 맞는 JSON만 다시 출력해라. "
+    "scores는 후보마다 candidate·overall(1~5 정수)·score_reason을 갖고, "
+    "ranking은 후보 이름 문자열의 목록이며, margin은 decisive/close 중 하나다."
+)
