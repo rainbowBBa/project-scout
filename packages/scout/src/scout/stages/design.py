@@ -174,6 +174,8 @@ def design_node(
     gate = SearchGate(approve=approve)
     design, truncated = asyncio.run(_run(state["interview"], llm, gate, settings))
 
+    # 쓰기 전에 이전 실행의 산출물을 비운다 (store.clear_stage_output 참고)
+    store.clear_stage_output(slug, "design")
     store.upsert_design(slug, design.architecture)
     store.upsert_components(slug, design.components)
 

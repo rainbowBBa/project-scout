@@ -598,6 +598,7 @@ def evaluate_node(state: ScoutState, *, llm: ChatBedrockConverse) -> dict:
 
     # 계산은 judge와 무관하게 전 후보에 대해 먼저 끝낸다 — 판정이 실패한 요소에서도
     # 계산된 점수는 남는다 (이중 안전망의 한쪽).
+    store.clear_stage_output(slug, "evaluate")
     step(f"계산 점수 {len(candidates)}개 후보")
     computed = store_computed_scores(slug, candidates)
 

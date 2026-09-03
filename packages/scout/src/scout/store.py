@@ -645,6 +645,54 @@ def add_pick(
         )
 
 
+# ── 재실행 — 단계가 자기 산출물을 교체한다 ───────────────────────────────
+
+# 단계별로 비울 테이블. picks는 요소별로 `clear_picks`가 따로 한다.
+_STAGE_TABLES = {
+    "design": (),
+    "search": ("facts", "candidates"),
+    "verify": ("citations", "verdicts"),
+    "evaluate": ("scores",),
+}
+
+
+def clear_stage_output(slug: str, stage: str, *, runs_dir: str | None = None) -> None:
+    """단계가 쓰기 전에 자기 산출물을 비운다.
+
+    ★ PK upsert만으로는 부족하다. `design`이 결정 지점 **이름을 다르게** 만들면
+    이전 실행의 후보·판정이 다른 키로 남아 **고아**가 된다 — 실측에서 `candidates`가
+    6행이었고 `socket.io`가 `'실시간 메시지 전달'`과 `'실시간 메시지 전달 계층'`
+    두 이름으로 들어 있었다. `evaluate`는 `store.get_candidates(slug)`를 읽으므로
+    사라진 요소의 후보까지 계산 점수를 매긴다.
+
+    `upsert_components`가 이미 DELETE + INSERT로 하는 것과 같은 규율을 나머지
+    산출물에도 적용한다.
+
+    `gaps`는 `candidate` 컬럼이 후보명·요소명·단계명을 겸해서 단계별로 정확히 가를 수
+    없다. 그래서 각 단계는 **자기 단계명으로 남긴 gap**만 비우고, `search`는 자기가
+    다시 만들 후보·요소에 달린 gap까지 함께 비운다 (그 gap이 가리키는 대상이 사라지므로).
+    전체 파이프라인을 다시 도는 정상 경로에서는 이걸로 충분하다 — `search`를 건너뛰고
+    뒤 단계만 다시 도는 경우(현재 `--from`은 그렇게 동작하지 않는다)에는 후보에 달린
+    gap이 쌓일 수 있다.
+    """
+    if stage not in _STAGE_TABLES:
+        raise ValueError(f"알 수 없는 단계: {stage}")
+    with _conn(slug, runs_dir) as conn:
+        conn.execute("DELETE FROM gaps WHERE slug = ? AND candidate = ?", (slug, stage))
+        if stage == "search":
+            conn.execute(
+                """
+                DELETE FROM gaps WHERE slug = ? AND candidate IN (
+                    SELECT name FROM candidates WHERE slug = ?
+                    UNION SELECT name FROM components WHERE slug = ?
+                )
+                """,
+                (slug, slug, slug),
+            )
+        for table in _STAGE_TABLES[stage]:
+            conn.execute(f"DELETE FROM {table} WHERE slug = ?", (slug,))
+
+
 def clear_picks(slug: str, component: str, *, runs_dir: str | None = None) -> None:
     with _conn(slug, runs_dir) as conn:
         conn.execute(

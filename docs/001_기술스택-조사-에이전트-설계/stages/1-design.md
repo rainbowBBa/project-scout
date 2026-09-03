@@ -176,9 +176,13 @@ messages, truncated = await run_agent_loop(agent, task, limit)   # agentkit · a
 
 에이전트가 툴을 부르며 설계를 세운다. 무엇을 확인하는가:
 
-- 이 구조에 쓸 수 있는 **후보 이름·패턴명이 실제로 존재하는가** (`npm_search`)
+- 이 구조에 쓸 수 있는 **후보 이름·패턴명이 실제로 존재하는가**
 - 생태계에서 통하는 **영어 어휘가 무엇인가** — `search_hints`의 재료
-- 레지스트리에 없는 **아키텍처 패턴·사례** (`web_search`)
+- 레지스트리에 없는 **아키텍처 패턴·사례**
+
+**어느 툴을 쓸지는 에이전트가 판단한다.** 프롬프트는 툴 5종이 무엇을 돌려주는지만
+설명하고 선택을 지시하지 않는다 — 지시하면 npm만 부르는 편향이 난다
+([CHANGELOG v25](../CHANGELOG.md)).
 
 `checkpointer=False`가 필수다 — 안 주면 바깥 그래프의 `SqliteSaver`(동기 전용)를
 물려받는데 이 에이전트는 `astream`으로 돈다.

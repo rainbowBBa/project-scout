@@ -234,6 +234,8 @@ def verify_node(state: ScoutState, *, llm: ChatBedrockConverse) -> dict:
         store.add_gap(slug, "verify", "판정할 후보가 없어 검증을 건너뜀")
         return {"verdicts": []}
 
+    # 판정은 _run_verify 안에서 후보별로 저장된다 — 비우는 것은 그 앞이어야 한다
+    store.clear_stage_output(slug, "verify")
     settings = Settings()
     verdicts, gaps = asyncio.run(
         _run_verify(

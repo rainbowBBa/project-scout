@@ -14,7 +14,7 @@ _settings = Settings()
 
 
 async def npm_search(text: str) -> dict:
-    """레지스트리 검색 — 후보 발견 주력 툴."""
+    """npm 레지스트리 검색 — 질의에 걸린 패키지 목록(이름·설명·버전)."""
     url = f"https://registry.npmjs.org/-/v1/search?text={quote(text)}&size=10"
     cached = cache.get(url, _settings)
     if cached is not None:

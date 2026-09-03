@@ -389,6 +389,9 @@ def search_node(
         )
     )
 
+    # ★ 쓰기 전에 비운다 — design이 결정 지점 이름을 다르게 만들면 이전 실행의
+    # 후보가 다른 키로 남아 고아가 되고, evaluate가 그것까지 채점한다.
+    store.clear_stage_output(slug, "search")
     for candidate in candidates:
         store.upsert_candidate(slug, candidate)
     for note in [*gaps, *gate.notes]:
