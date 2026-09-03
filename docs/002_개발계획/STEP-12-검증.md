@@ -21,14 +21,17 @@
 ### 자동
 
 - [ ] `uv run pytest` **6종 + `test_report`** 전부 통과
-- [ ] `test_necessity_wiring.py` — 다섯 가지를 본다
+- [ ] `test_necessity_wiring.py` — 통과 필터가 **세 축**이다
   ```
   1. defer/unnecessary 가 search 입력 목록에 없다
   2. needs_comparison=false 도 search 입력 목록에 없다
-  3. 1번이 보고서 "지금 만들지 않아도 되는 것"에 렌더링된다
-  4. 2번이 보고서 "설계에서 이미 정해진 부분"에 렌더링된다
-  5. 걸러진 것이 0개면 경고가 출력된다
+  3. alternatives 가 2개 미만인 것도 없다 (고를 것이 없으면 결정 지점이 아니다)
+  4. 1번이 보고서 "지금 만들지 않아도 되는 것"에 렌더링된다
+  5. 2·3번이 보고서 "설계에서 이미 정해진 부분"에 렌더링된다
+  6. 걸러진 것이 0개면 경고가 출력된다
   ```
+  → 3번은 `tests/test_decision_points.py`가 먼저 검사한다 (v26). 이 STEP에서 흡수하거나
+    그대로 두고 축만 확인한다
 - [ ] `test_design_no_facts.py` — 세 가지를 본다
   ```
   1. design 이 툴을 불러도 facts 테이블에 행이 생기지 않는다

@@ -22,7 +22,8 @@
 ## 입력
 
 `components` 테이블에서 `necessity IN ('essential', 'valuable')`이고
-`needs_comparison = true`인 결정 지점을 `priority` 순으로 정렬해 **상위 3개**만
+`needs_comparison = true`이고 **`alternatives`가 2개 이상**인 결정 지점을 `priority`
+순으로 정렬해 **상위 3개**만
 (`--max-components`, 기본 3). `defer`/`unnecessary`, 설계에서 이미 닫힌 결정,
 우선순위가 밀린 요소는 이 단계에 들어오지 않는다 — [1-design](1-design.md) 참조.
 
@@ -34,10 +35,21 @@
 
 | 값 | 에이전트에게 하는 일 |
 |---|---|
-| `decision_question` | **무엇을 정해야 하는가** — 조사의 목표를 한 문장으로 준다 |
+| `decision_question` | **무엇을 고를 것인가** — 조사의 목표를 한 문장으로 준다 |
+| **`alternatives`** | **★ 최소 커버리지** — 이 보기들은 반드시 후보로 올린다 |
 | `constraints` | **후보 필터** — 이 조건을 못 지키는 후보는 찾아도 의미가 없다 |
-| `search_hints` | **질의 씨드** (영어 기술 어휘). `npm_search`에 바로 넣을 수 있는 값 |
+| `search_hints` | **질의 씨드** (영어 기술 어휘) |
 | `role_in_design` · `approach_notes` | 설계 안에서 이 조각이 맡는 자리와 방향 |
+
+### `alternatives`는 최소이고 상한이 아니다
+
+`design`이 뽑은 보기를 **하나도 빠뜨리지 않고** 후보로 올린다. 조사하다 더 나은 것을
+찾으면 추가해도 된다.
+
+**코드가 커버리지를 검사한다** — 대안 이름이 후보에 하나도 안 걸리면 `gaps`에 남긴다.
+실측에서 질문이 `"Next.js vs Vite+React"`였는데 **Next.js가 후보에 없었고**, 그 사실이
+어디에도 안 남아 보고서만 보면 알 수 없었다 ([CHANGELOG v26](../CHANGELOG.md)).
+`search_hints`가 빈 것을 `gaps`로 잡는 것과 같은 성격이다.
 
 `search_hints`가 없으면 이 단계는 한국어 추상 명사구(`실시간 메시지 전달`)만 들고
 `npm_search`를 부르게 되고, 레지스트리에서 신호가 나오지 않는다. 그래서 `design`은

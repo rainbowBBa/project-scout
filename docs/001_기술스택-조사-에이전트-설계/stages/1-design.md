@@ -62,7 +62,8 @@ class Component(BaseModel):
     name: str            # "실시간 메시지 전달", "메시지 저장", "인증", "배포·운영"
     kind: Literal["feature", "data", "infrastructure", "integration", "ops"]
     role_in_design: str        # 이 설계에서 이 조각이 맡는 역할
-    decision_question: str     # 무엇을 정해야 하는가 — 비교의 질문
+    decision_question: str     # 무엇을 **고를** 것인가 — 비교의 질문
+    alternatives: list[str]    # ★ 실제로 고를 보기. 2개 미만이면 결정 지점이 아니다
     constraints: list[str]     # 설계가 강제하는 선택 조건 — 후보 필터
     needs_comparison: bool     # false면 설계에서 이미 닫힌 결정
     no_comparison_reason: str  # needs_comparison=false 일 때의 근거
@@ -102,9 +103,13 @@ search_hints: socket.io                  ← 영어 어휘 (검색 재료)
               websocket reconnection room broadcast
 ```
 
-**비어 있으면 안 된다.** 비면 `search` 에이전트는 `조사 힌트: (없음)`을 받은 채로
-"`npm_search`를 먼저 쓴다"는 지시를 수행하게 되고, 넣을 질의가 한국어 추상 명사구밖에
+**비어 있으면 안 된다.** 비면 `search` 에이전트에게 넣을 질의가 한국어 추상 명사구밖에
 남지 않는다. 통과 요소의 `search_hints`가 비면 `gaps`에 기록한다.
+
+**힌트의 층을 `alternatives`에 맞춘다.** 대안이 패턴이면 패턴명, 패키지면 패키지명을
+쓴다 — 각 대안을 **찾을 수 있는 말**이어야 한다. 실측에서 `"SSE vs WebSocket"`을
+물어놓고 힌트가 `fastapi streaming response SSE`처럼 패키지 검색어라 패키지 후보만
+돌아왔다. 어느 소스로 갈지는 에이전트가 판단한다 ([CHANGELOG v25](../CHANGELOG.md)).
 
 ### `kind`는 요소를 빠뜨리지 않게 하는 체크리스트
 
@@ -135,6 +140,56 @@ LLM은 눈에 보이는 기능만 나열하고 배포·운영·인증을 잊는 
 
 `necessity_reason`에 **제약조건을 인용**해야 한다. "200명", "3인 팀", "3개월"처럼
 `interview`에서 나온 숫자가 이유에 등장해야 판단에 근거가 있는 것이다.
+
+---
+
+## ★ 결정 지점은 **교체 단위**다 — `alternatives`가 그걸 강제한다
+
+`decision_question`은 **"무엇을 고를 것인가"**이고, `alternatives`에 그 보기를 적는다.
+**보기를 2개 못 적으면 그건 결정 지점이 아니다.**
+
+실측에서 이 규칙이 없어 무관한 1위가 나왔다 (CHANGELOG v26).
+
+```
+✘ "LangChain 에이전트와 회사 AI API를 어떻게 연동할 것인가?"      어떻게 = 선택이 아니다
+✘ "에러 응답의 세부도를 어느 수준으로 제공할 것인가?"             정도 = 선택이 아니다
+✘ "입력 스키마를 어떻게 정의할 것인가?"                          우리가 설계할 것
+✔ "토큰 단위 스트리밍을 무엇으로 할 것인가?"   alternatives: [SSE, WebSocket]
+✔ "프론트엔드 프레임워크는 무엇으로?"          alternatives: [Next.js, Vite + React]
+```
+
+교체 단위는 **아키텍처 패턴 · 저장소 · 런타임·프레임워크 · 라이브러리 · 배포 방식**이다.
+**기능은 결정 지점이 아니다** — "페르소나 생성 에이전트"는 만들 기능이고, 거기서 고를
+것은 "에이전트 오케스트레이션 라이브러리"다. 기능 자체는 `Architecture`가 담는다.
+
+### `alternatives`가 세 가지를 한꺼번에 푼다
+
+`design`은 원래 대안을 알고 있었다 — 질문에 *"SSE와 WebSocket 중"*이라고 써놨다.
+**구조화되지 않아 `search`가 쓸 수 없었을 뿐이다.**
+
+| 실측된 실패 | `alternatives`가 어떻게 잡나 |
+|---|---|
+| 대안 없는 질문이 통과해 억지 후보가 1위 | 2개를 못 적으면 통과하지 못한다 — 자체 검사 장치 |
+| 브리프가 지정한 기술을 다시 비교 | 대안이 1개(그것뿐)라 자동으로 닫힌 결정 |
+| 질문은 method 층인데 후보는 package 층 | `search`가 대안을 **반드시 조사할 대상**으로 받는다 |
+
+세 번째가 가장 컸다. `"SSE vs WebSocket"`이라 물어놓고 후보가 `fastapi·langchain·
+websockets`로 왔고, **SSE도 WebSocket도 후보에 없었다.**
+
+### 브리프가 지정한 기술은 닫힌 결정이다
+
+`refined_brief`에 *"lang chain, graph를 이용했으면 좋겠어"*가 있으면 `alternatives`는
+그것뿐이고 `needs_comparison=false`다. **사용자가 정해준 답을 결론으로 돌려주면
+정보가 0이다** — 실측에서 1위가 langchain으로 나왔다.
+
+### 대안이 2개 미만이면 코드가 닫힌 결정으로 내린다
+
+프롬프트가 그래도 `needs_comparison=true`로 주면 `design`이 **코드로** 내리고
+`no_comparison_reason`을 채운다. 조용히 버리지 않고 `gaps`에도 남긴다 — 보고서의
+"설계에서 이미 정해진 부분"에 실려 **왜 비교하지 않았는지가 보인다** (불변식 12).
+
+규칙을 프롬프트 희망이 아니라 코드가 강제하는 이유는 [08-설정](../08-설정.md)
+"SCOUT_MODEL_ID"와 같다 — 지시 준수가 약한 모델에서도 유지돼야 한다.
 
 ---
 
@@ -274,7 +329,9 @@ design 도출      6~10개  (전부 components 테이블에 저장)
                     ↓
 필터 1          necessity IN ('essential','valuable')
                     ↓
-필터 2          needs_comparison = true          ← ★ 신설
+필터 2          needs_comparison = true
+                    ↓
+필터 3          len(alternatives) >= 2           ← ★ 신설. 고를 것이 있는가
                     ↓
 정렬            priority 오름차순
                     ↓
@@ -317,9 +374,9 @@ designs (slug PK, summary, shape, data_flow, build_order_json, open_questions_js
 ### `components` 6~10행 — **걸러진 것까지 전부 저장한다**
 
 ```sql
-components (slug, name, kind, role_in_design, decision_question, constraints_json,
-            needs_comparison, no_comparison_reason, necessity, necessity_reason,
-            priority, approach_notes, search_hints_json)
+components (slug, name, kind, role_in_design, decision_question, alternatives_json,
+            constraints_json, needs_comparison, no_comparison_reason,
+            necessity, necessity_reason, priority, approach_notes, search_hints_json)
 ```
 
 `search_hints`는 **저장한다.** 상태로만 넘기면 `store.get_components`로 돌아오는
