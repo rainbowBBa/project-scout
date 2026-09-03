@@ -112,7 +112,7 @@ async def test_non_interactive_blocks_without_prompting():
 
 def test_approval_notice_names_the_query():
     assert APPROVAL_NOTICE.format(query="socket.io alternative") == (
-        '"socket.io alternative"를 검색하려고 합니다 확인 바랍니다'
+        '"socket.io alternative" 키워드로 인터넷 검색을 하려고 합니다. 확인 바랍니다.'
     )
 
 
