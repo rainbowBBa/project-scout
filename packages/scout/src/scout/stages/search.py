@@ -54,7 +54,7 @@ if TYPE_CHECKING:
     from scout.schemas import Component, Interview
     from scout.state import ScoutState
 
-_MAX_WEB_FACTS = 6
+DEFAULT_MAX_WEB_FACTS = 6
 
 
 # ── ToolMessage → Fact ───────────────────────────────────────────────────
@@ -162,7 +162,13 @@ def call_matches(call: ToolCall, candidate_name: str) -> bool:
     return False
 
 
-def facts_for_candidate(calls: Sequence[ToolCall], name: str, now: str) -> list[Fact]:
+def facts_for_candidate(
+    calls: Sequence[ToolCall],
+    name: str,
+    now: str,
+    *,
+    max_web_facts: int = DEFAULT_MAX_WEB_FACTS,
+) -> list[Fact]:
     keyed: dict[str, Fact] = {}
     web: list[Fact] = []
     for call in calls:
@@ -182,7 +188,7 @@ def facts_for_candidate(calls: Sequence[ToolCall], name: str, now: str) -> list[
             continue
         seen.add(fact.url)
         rank += 1
-        if rank > _MAX_WEB_FACTS:
+        if rank > max_web_facts:
             break
         facts.append(fact.model_copy(update={"id": f"web.{rank}"}))
     return facts
@@ -315,7 +321,10 @@ async def _search_component(
     agent = create_agent(
         llm,
         list(tools.values()),
-        system_prompt=SEARCH_AGENT_SYSTEM_PROMPT,
+        # 예산 숫자를 문장에 굳히지 않는다 (design과 같은 이유).
+        system_prompt=SEARCH_AGENT_SYSTEM_PROMPT.format(
+            web_search_budget=settings.scout_search_web_searches
+        ),
         checkpointer=False,
     )
     task = SEARCH_AGENT_TASK_PROMPT.format(
@@ -350,7 +359,9 @@ async def _search_component(
         SEARCH_EXTRACT_PROMPT,
         llm.with_structured_output(CandidateList, include_raw=True),
         {
-            "transcript": build_transcript(calls, messages),
+            "transcript": build_transcript(
+                calls, messages, payload_chars=settings.scout_tool_payload_chars
+            ),
             "alternatives": "\n".join(f"- {a}" for a in component.alternatives)
             or "- (없음)",
             "max_candidates": max_candidates,
@@ -363,7 +374,9 @@ async def _search_component(
 
     candidates = []
     for draft in parsed.candidates[:max_candidates]:
-        facts = facts_for_candidate(calls, draft.name, now)
+        facts = facts_for_candidate(
+            calls, draft.name, now, max_web_facts=settings.scout_max_web_facts
+        )
         step(f"{draft.name} dossier 보강", subject=component.name)
         extra, gaps = await topup_dossier(draft.name, draft.kind, facts, tools, now)
         candidates.append(
@@ -416,7 +429,9 @@ async def _run_search(
     max_candidates: int,
     settings: Settings,
 ) -> tuple[list[Candidate], list[str]]:
-    tools_list = await make_mcp_client().get_tools()
+    tools_list = await make_mcp_client(
+        settings.scout_mcp_read_timeout_seconds
+    ).get_tools()
     tools = {t.name: t for t in tools_list}
     step(f"결정 지점 {len(components)}개 조사 시작")
 
@@ -466,7 +481,9 @@ def search_node(
         return {"candidates": []}
 
     settings = Settings()
-    gate = SearchGate(approve=approve)
+    gate = SearchGate(
+        approve=approve, max_rejections=settings.scout_max_search_rejections
+    )
     candidates, gaps = asyncio.run(
         _run_search(
             components,

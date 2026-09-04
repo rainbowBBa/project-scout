@@ -56,7 +56,9 @@ async def github_repo_health(owner: str, repo: str) -> dict:
     if cached is not None:
         return cached
 
-    async with httpx.AsyncClient(headers=_headers(), timeout=10.0) as client:
+    async with httpx.AsyncClient(
+        headers=_headers(), timeout=_settings.scout_net_http_timeout_seconds
+    ) as client:
         repo_url = f"https://api.github.com/repos/{owner}/{repo}"
         await check_allowed(repo_url, _settings)
         repo_resp = await client.get(repo_url)

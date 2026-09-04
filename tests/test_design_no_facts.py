@@ -157,8 +157,9 @@ def _run_design_node(
     runs_dir: str, monkeypatch: pytest.MonkeyPatch, design: Design
 ) -> tuple[dict, _SpyTool, _StubLLM]:
     spy = _SpyTool()
+    # make_mcp_client는 stdio 세션 타임아웃을 인자로 받는다 — 대역도 받아야 한다
     monkeypatch.setattr(
-        design_stage, "make_mcp_client", lambda: _FakeMCPClient([spy])
+        design_stage, "make_mcp_client", lambda *_args: _FakeMCPClient([spy])
     )
     monkeypatch.setattr(
         design_stage, "create_agent", lambda llm, tools, **kwargs: _FakeAgent(tools)

@@ -124,9 +124,17 @@ async def _doctor() -> None:
         result = await llm.ainvoke("ping")
         typer.echo(f"[OK] Sonnet 1회 호출 성공 ({len(str(result.content))} chars)")
 
-        results = await asyncio.gather(*[llm.ainvoke("ping") for _ in range(4)])
+        # 설정값을 그대로 쓴다 — 4를 복사해두면 SCOUT_LLM_CONCURRENCY를 올렸을 때
+        # doctor가 검사하는 동시성과 실제 동시성이 갈려 검사가 무의미해진다.
+        parallel = settings.scout_llm_concurrency
+        results = await asyncio.gather(*[llm.ainvoke("ping") for _ in range(parallel)])
         typer.echo(
-            f"[OK] Sonnet 4병렬 호출 성공 ({len(results)}개 응답, 동시 쿼터 확인됨)"
+            f"[OK] {parallel}병렬 호출 성공 ({len(results)}개 응답, 동시 쿼터 확인됨)"
+        )
+        typer.echo(
+            f"      타임아웃: 연결 {settings.scout_bedrock_connect_timeout_seconds}s · "
+            f"읽기 {settings.scout_bedrock_read_timeout_seconds}s · "
+            f"재시도 {settings.scout_bedrock_max_attempts}회"
         )
     except Exception as e:  # noqa: BLE001 — doctor는 원인 불문 다음 확인으로 넘어가야 한다
         typer.echo(f"[FAIL] Bedrock 호출 실패: {e}")

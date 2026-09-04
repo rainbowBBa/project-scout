@@ -46,6 +46,8 @@ if TYPE_CHECKING:
 
 Ask = Callable[[str], str]
 
+# Settings.scout_interview_max_turns 의 기본값과 같아야 한다 — 복사본이지만
+# run_interview를 직접 부르는 테스트가 있어 인자 기본값이 필요하다.
 _DEFAULT_MAX_TURNS = 5
 
 

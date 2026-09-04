@@ -15,14 +15,14 @@ _settings = Settings()
 
 async def npm_search(text: str) -> dict:
     """npm 레지스트리 검색 — 질의에 걸린 패키지 목록(이름·설명·버전)."""
-    url = f"https://registry.npmjs.org/-/v1/search?text={quote(text)}&size=10"
+    url = f"https://registry.npmjs.org/-/v1/search?text={quote(text)}&size={_settings.scout_net_npm_search_size}"
     cached = cache.get(url, _settings)
     if cached is not None:
         return cached
 
     await check_allowed(url, _settings)
     async with httpx.AsyncClient() as client:
-        response = await client.get(url, timeout=10.0)
+        response = await client.get(url, timeout=_settings.scout_net_http_timeout_seconds)
         response.raise_for_status()
         data = response.json()
 
@@ -50,7 +50,7 @@ async def npm_package(name: str) -> dict:
 
     await check_allowed(url, _settings)
     async with httpx.AsyncClient() as client:
-        response = await client.get(url, timeout=10.0)
+        response = await client.get(url, timeout=_settings.scout_net_http_timeout_seconds)
         response.raise_for_status()
         data = response.json()
 

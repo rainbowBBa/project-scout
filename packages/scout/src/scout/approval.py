@@ -24,7 +24,10 @@ from scout.progress import step, while_asking
 if TYPE_CHECKING:
     from langchain_core.tools import BaseTool
 
-_MAX_REJECTIONS = 3
+# 기본값이자 테스트의 기준선. 프로덕션은 Settings 값을 인자로 넘긴다 — 모듈 상수를
+# 직접 읽으면 개발자 로컬 `.env`가 테스트 결과를 바꾸고, `.env`는 커밋되지 않아
+# 재현도 안 된다 (불변식 10).
+DEFAULT_MAX_REJECTIONS = 3
 
 # 승인되는 웹검색 상한. 없으면 에이전트가 한 요소에 15번씩 검색해 사람에게 승인
 # 프롬프트를 그만큼 띄운다 (실측). `search`는 요소당 이 값을 쓰고, `design`은 실행
@@ -96,6 +99,7 @@ class SearchGate:
     """한 단계 동안의 웹검색 승인 상태. 거부 횟수가 한도를 넘으면 차단한다."""
 
     approve: Approve
+    max_rejections: int = DEFAULT_MAX_REJECTIONS
     blocked: bool = False
     rejections: int = 0
     notes: list[str] = field(default_factory=list)
@@ -125,9 +129,9 @@ class SearchGate:
 
             self.rejections += 1
             self.notes.append(f"웹검색 거부: {query} — {approval.reason}")
-            if self.rejections >= _MAX_REJECTIONS:
+            if self.rejections >= self.max_rejections:
                 self.blocked = True
-                self.notes.append(f"웹검색 거부 {_MAX_REJECTIONS}회 — 이후 차단됨")
+                self.notes.append(f"웹검색 거부 {self.max_rejections}회 — 이후 차단됨")
             return approval
 
 

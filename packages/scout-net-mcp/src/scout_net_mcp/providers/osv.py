@@ -79,7 +79,7 @@ async def osv_query(name: str, ecosystem: str, version: str) -> dict:
                 "package": {"name": name, "ecosystem": resolved},
                 "version": version,
             },
-            timeout=10.0,
+            timeout=_settings.scout_net_http_timeout_seconds,
         )
         response.raise_for_status()
         data = response.json()

@@ -1,6 +1,7 @@
 import contextlib
 from typing import Any
 
+from botocore.config import Config
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
@@ -10,10 +11,36 @@ from pydantic import BaseModel, ValidationError
 from scout.config import Settings
 
 
+def bedrock_config(settings: Settings) -> Config:
+    """Bedrock 호출의 타임아웃·재시도.
+
+    ★ **botocore 기본 read_timeout 60초에서 `design` 추출이 죽었다** — 툴 기록 22회가
+    담긴 프롬프트로 `Design` 구조화 출력을 만드는 데 부족했고, 파이프라인 전체가
+    거기서 끝났다. 짧아서 죽는 것이 길어서 기다리는 것보다 나쁘다.
+
+    `ChatBedrockConverse`의 `timeout=`을 쓰지 않는 이유는 그 인자가 connect와 read를
+    **같은 값으로 묶기** 때문이다. 연결은 빠르거나 아예 안 되므로(느리면 리전·자격
+    문제다) 따로 잡아야 하고, `max_retries=`도 `max_attempts`만 정해 mode를 못 바꾼다.
+
+    retry mode를 `standard`로 준다 — 기본 `legacy`는 `ThrottlingException` 처리가 좁고
+    `verify`가 후보를 병렬로 돌려 스로틀링에 부딪힌다. `adaptive`는 클라이언트 측
+    레이트리미팅이 붙어 우리 `Semaphore`와 이중이 되므로 쓰지 않는다.
+    """
+    return Config(
+        connect_timeout=settings.scout_bedrock_connect_timeout_seconds,
+        read_timeout=settings.scout_bedrock_read_timeout_seconds,
+        retries={
+            "max_attempts": settings.scout_bedrock_max_attempts,
+            "mode": "standard",
+        },
+    )
+
+
 def make_llm(settings: Settings) -> ChatBedrockConverse:
     return ChatBedrockConverse(
         model=settings.scout_model_id,
         region_name=settings.aws_region,
+        config=bedrock_config(settings),
     )
 
 

@@ -22,7 +22,12 @@ from typing import TYPE_CHECKING
 from langchain.agents import create_agent
 
 from scout import store
-from scout.agentkit import build_transcript, collect_tool_calls, run_agent_loop
+from scout.agentkit import (
+    DEFAULT_TOOL_PAYLOAD_CHARS,
+    build_transcript,
+    collect_tool_calls,
+    run_agent_loop,
+)
 from scout.approval import SearchGate, default_approve, wrap_web_search
 from scout.llm import invoke_structured
 from scout.mcp_client import make_mcp_client
@@ -46,7 +51,7 @@ if TYPE_CHECKING:
 
 _PASSING_NECESSITY = {"essential", "valuable"}
 # 결정 지점은 "무엇을 고를 것인가"다. 보기가 이만큼 없으면 고를 것이 없다 (불변식 18)
-_MIN_ALTERNATIVES = 2
+DEFAULT_MIN_ALTERNATIVES = 2
 
 
 def _prompt_input(interview: Interview) -> dict[str, str]:
@@ -61,13 +66,20 @@ async def run_design(
     interview: Interview,
     tools: dict[str, BaseTool],
     recursion_limit: int,
+    *,
+    web_search_budget: int,
+    payload_chars: int = DEFAULT_TOOL_PAYLOAD_CHARS,
 ) -> tuple[Design, bool]:
     # checkpointer=False — 안 주면 바깥 그래프의 SqliteSaver(동기 전용)를 물려받는데
     # 이 에이전트는 astream으로 돈다 ("SqliteSaver does not support async methods").
     agent = create_agent(
         llm,
         list(tools.values()),
-        system_prompt=DESIGN_AGENT_SYSTEM_PROMPT,
+        # 예산 숫자를 문장에 굳히지 않는다 — 설정을 내렸는데 프롬프트가 3회라고
+        # 말하면 에이전트는 3회 있다고 믿고 2회째에 예산 소진 응답을 받는다.
+        system_prompt=DESIGN_AGENT_SYSTEM_PROMPT.format(
+            web_search_budget=web_search_budget
+        ),
         checkpointer=False,
     )
     prompt_input = _prompt_input(interview)
@@ -84,7 +96,9 @@ async def run_design(
         llm.with_structured_output(Design, include_raw=True),
         {
             **prompt_input,
-            "transcript": build_transcript(collect_tool_calls(messages), messages),
+            "transcript": build_transcript(
+                collect_tool_calls(messages), messages, payload_chars=payload_chars
+            ),
         },
         DESIGN_EXTRACT_RETRY_HINT,
         schema=Design,
@@ -94,7 +108,9 @@ async def run_design(
     return design, truncated
 
 
-def close_undecidable(components: list[Component]) -> list[Component]:
+def close_undecidable(
+    components: list[Component], *, min_alternatives: int = DEFAULT_MIN_ALTERNATIVES
+) -> list[Component]:
     """고를 보기가 없는 결정 지점을 **코드가** 닫힌 결정으로 내린다 (불변식 18).
 
     프롬프트에 반례를 박아도 모델이 `needs_comparison=true`로 주는 것을 막지 못한다 —
@@ -107,7 +123,7 @@ def close_undecidable(components: list[Component]) -> list[Component]:
     """
     closed: list[Component] = []
     for c in components:
-        if not c.needs_comparison or len(c.alternatives) >= _MIN_ALTERNATIVES:
+        if not c.needs_comparison or len(c.alternatives) >= min_alternatives:
             continue
         only = c.alternatives[0] if c.alternatives else ""
         c.needs_comparison = False
@@ -121,7 +137,10 @@ def close_undecidable(components: list[Component]) -> list[Component]:
 
 
 def select_passing_components(
-    components: list[Component], max_components: int
+    components: list[Component],
+    max_components: int,
+    *,
+    min_alternatives: int = DEFAULT_MIN_ALTERNATIVES,
 ) -> list[Component]:
     """search로 넘길 상위 결정 지점만 고른다 — 필터가 **셋**이다.
 
@@ -137,7 +156,7 @@ def select_passing_components(
         for c in components
         if c.necessity in _PASSING_NECESSITY
         and c.needs_comparison
-        and len(c.alternatives) >= _MIN_ALTERNATIVES
+        and len(c.alternatives) >= min_alternatives
     ]
     return sorted(passing, key=lambda c: c.priority)[:max_components]
 
@@ -188,7 +207,8 @@ async def _run(
     gate: SearchGate,
     settings: Settings,
 ) -> tuple[Design, bool]:
-    tools = {t.name: t for t in await make_mcp_client().get_tools()}
+    client = make_mcp_client(settings.scout_mcp_read_timeout_seconds)
+    tools = {t.name: t for t in await client.get_tools()}
     # 진행 표시가 안쪽, 승인 게이트가 바깥쪽 — 거부된 검색의 진행 줄은 찍히지 않는다
     # (001/09-출력양식.md).
     tools = wrap_all(tools)
@@ -200,7 +220,12 @@ async def _run(
             ),
         }
     return await run_design(
-        llm, interview, tools, settings.scout_design_recursion_limit
+        llm,
+        interview,
+        tools,
+        settings.scout_design_recursion_limit,
+        web_search_budget=settings.scout_design_web_searches,
+        payload_chars=settings.scout_tool_payload_chars,
     )
 
 
@@ -216,18 +241,24 @@ def design_node(
     settings = Settings()
     # 게이트는 이 노드에서 새로 만든다 — search_node와 공유하면 SearchGate._lock이
     # 다른 이벤트 루프에 묶인다 (두 노드가 각각 asyncio.run으로 루프를 연다).
-    gate = SearchGate(approve=approve)
+    gate = SearchGate(
+        approve=approve, max_rejections=settings.scout_max_search_rejections
+    )
     design, truncated = asyncio.run(_run(state["interview"], llm, gate, settings))
 
     # 쓰기 전에 이전 실행의 산출물을 비운다 (store.clear_stage_output 참고)
     store.clear_stage_output(slug, "design")
     store.upsert_design(slug, design.architecture)
     # 저장 전에 내린다 — DB에 내려간 상태가 들어가야 report가 이유를 렌더링한다
-    closed = close_undecidable(design.components)
+    closed = close_undecidable(
+        design.components, min_alternatives=settings.scout_min_alternatives
+    )
     store.upsert_components(slug, design.components)
 
     selected = select_passing_components(
-        design.components, state.get("max_components", 3)
+        design.components,
+        state.get("max_components", settings.scout_max_components),
+        min_alternatives=settings.scout_min_alternatives,
     )
     _record_gaps(slug, design, selected, closed)
     if truncated:

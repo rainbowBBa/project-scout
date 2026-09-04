@@ -50,15 +50,15 @@ def split_sentences(text: str) -> list[str]:
 
 # `<summary>`에 넣을 길이. 실측에서 judge의 **첫 문장 자체가 313자**인 경우가 있었다 —
 # 문장을 중간에서 끊는 건 고치는 것이므로, 접힌 전문은 그대로 두고 요약 줄만 자른다.
-_SUMMARY_CHARS = 90
+DEFAULT_SUMMARY_CHARS = 90
 
 
-def _summary_line(text: str) -> str:
+def _summary_line(text: str, summary_chars: int = DEFAULT_SUMMARY_CHARS) -> str:
     """접힌 블록의 `<summary>` 한 줄. 전문은 바로 아래에 있으므로 감추는 게 아니다."""
     first = (split_sentences(text) or [""])[0]
-    if len(first) <= _SUMMARY_CHARS:
+    if len(first) <= summary_chars:
         return first
-    return first[:_SUMMARY_CHARS].rstrip() + "…"
+    return first[:summary_chars].rstrip() + "…"
 
 
 def _sentences(text: str) -> Markup:
@@ -73,26 +73,34 @@ def _sentences(text: str) -> Markup:
 
 
 # 제목 상한. 프롬프트가 40자를 요구하지만 지시 준수가 약한 모델에서도 화면이 버텨야 한다.
-_TITLE_CHARS = 60
+DEFAULT_TITLE_CHARS = 60
+# 보고서 "가장 큰 위험"에 싣는 개수. 0이면 섹션이 사라진다 (불변식 12).
+DEFAULT_RISKS_SHOWN = 3
 
 # 점수의 출처 배지. CSS 클래스는 영어를 그대로 쓰고 **보이는 글자만** 한글이다 —
 # `rubric.COMPUTED`·`UNAVAILABLE`이 DB에 들어가는 값이라 그쪽을 건드리면 안 된다.
 _SOURCE_LABELS = {"computed": "계산", "judged": "판정", "unavailable": "근거 없음"}
 
 
-def _headline(title: str | None, description: str, slug: str) -> str:
+def _headline(
+    title: str | None,
+    description: str,
+    slug: str,
+    *,
+    title_chars: int = DEFAULT_TITLE_CHARS,
+) -> str:
     """제목 — interview가 쓴 것을 쓰고, 없거나 너무 길면 원문·slug로 물러난다.
 
     코드가 문장을 다듬지 않는다(불변식 7). 여기서 하는 건 **고르기**뿐이다 —
     LLM이 제목 대신 문단을 넣으면 h1이 세 줄이 되므로 그때는 원문이 차라리 낫다.
     """
     cleaned = (title or "").strip()
-    if cleaned and len(cleaned) <= _TITLE_CHARS:
+    if cleaned and len(cleaned) <= title_chars:
         return cleaned
     return description or slug
 
 
-def _env() -> jinja2.Environment:
+def _env(summary_chars: int = DEFAULT_SUMMARY_CHARS) -> jinja2.Environment:
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(_TEMPLATE_DIR),
         autoescape=True,
@@ -100,12 +108,18 @@ def _env() -> jinja2.Environment:
         lstrip_blocks=True,
     )
     env.filters["sentences"] = _sentences
-    env.filters["summary_line"] = _summary_line
+    env.filters["summary_line"] = lambda text: _summary_line(text, summary_chars)
     env.filters["source_label"] = lambda source: _SOURCE_LABELS.get(source, source)
     return env
 
 
-def build_report_context(slug: str, *, runs_dir: str | None = None) -> dict:
+def build_report_context(
+    slug: str,
+    *,
+    runs_dir: str | None = None,
+    title_chars: int = DEFAULT_TITLE_CHARS,
+    risks_shown: int = DEFAULT_RISKS_SHOWN,
+) -> dict:
     """store 전체를 읽어 템플릿이 바로 쓸 수 있는 dict로 조립한다.
 
     여기서는 SQL 조인·그룹핑만 한다 — verify·evaluate가 이미 끝낸 판단·계산을
@@ -218,7 +232,7 @@ def build_report_context(slug: str, *, runs_dir: str | None = None) -> dict:
         if verdict:
             risks.extend(verdict.cons)
             risks.extend(verdict.caveats)
-    risks = risks[:3]
+    risks = risks[:risks_shown]
 
     rejections = [
         {
@@ -262,7 +276,12 @@ def build_report_context(slug: str, *, runs_dir: str | None = None) -> dict:
         "closed": closed,
         # 제목은 interview가 쓴다 (불변식 7). 길거나 비면 원문으로 물러난다 —
         # 예전 실행의 interview_json에는 이 키가 아예 없다.
-        "title": _headline(interview.get("title"), run.get("description", ""), slug),
+        "title": _headline(
+            interview.get("title"),
+            run.get("description", ""),
+            slug,
+            title_chars=title_chars,
+        ),
         "constraints": interview.get("constraints") or [],
         "refined_brief": interview.get("refined_brief", ""),
         "assumptions": interview.get("assumptions") or [],
@@ -283,8 +302,8 @@ def build_report_context(slug: str, *, runs_dir: str | None = None) -> dict:
     }
 
 
-def render_report(ctx: dict) -> str:
-    template = _env().get_template("report.html.j2")
+def render_report(ctx: dict, *, summary_chars: int = DEFAULT_SUMMARY_CHARS) -> str:
+    template = _env(summary_chars).get_template("report.html.j2")
     return template.render(**ctx)
 
 
@@ -309,8 +328,14 @@ def report_node(state: ScoutState, *, runs_dir: str | None = None) -> dict:
     from scout.config import Settings
 
     slug = state["slug"]
-    ctx = build_report_context(slug, runs_dir=runs_dir)
-    html = render_report(ctx)
+    settings = Settings()
+    ctx = build_report_context(
+        slug,
+        runs_dir=runs_dir,
+        title_chars=settings.scout_report_title_chars,
+        risks_shown=settings.scout_report_risks,
+    )
+    html = render_report(ctx, summary_chars=settings.scout_report_summary_chars)
 
     base = runs_dir or Settings().scout_runs_dir
     path = Path(base) / slug / "report.html"

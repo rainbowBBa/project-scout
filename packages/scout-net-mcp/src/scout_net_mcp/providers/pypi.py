@@ -18,7 +18,7 @@ async def pypi_package(name: str) -> dict:
 
     await check_allowed(url, _settings)
     async with httpx.AsyncClient() as client:
-        response = await client.get(url, timeout=10.0)
+        response = await client.get(url, timeout=_settings.scout_net_http_timeout_seconds)
         response.raise_for_status()
         data = response.json()
 

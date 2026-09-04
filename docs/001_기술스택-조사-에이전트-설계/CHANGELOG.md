@@ -6,6 +6,124 @@
 
 ---
 
+## v31 (2026-09-04) — 타임아웃을 손잡이로: 60초에 죽던 파이프라인
+
+`design` 추출 호출이 죽어 파이프라인이 완주하지 못했다.
+
+```
+ReadTimeoutError: Read timeout on endpoint URL:
+".../model/us.anthropic.claude-sonnet-4-6/converse"
+[NOTE] During task with name 'design'
+```
+
+`make_llm`이 `ChatBedrockConverse`에 **타임아웃을 전혀 주지 않아** botocore 기본
+read 60초가 걸렸다. 툴 기록 22회가 담긴 프롬프트로 `Design` 구조화 출력을 만드는 데
+부족했고, 파이프라인 전체가 거기서 끝났다. STEP 12 E2E와 v30의 제목 확인을 둘 다
+막고 있던 것이 이거다.
+
+**프로젝트 문서에 `read_timeout`·`botocore.Config` 언급이 0건이었다** — 규정된 바가
+없는 새 영역이라 뒤집을 기존 판단이 없었다.
+
+### 왜 `ChatBedrockConverse`의 `timeout=`을 안 쓰는가
+
+그 인자가 있다는 걸 확인했는데도 쓰지 않았다. 두 가지가 걸렸다 —
+`timeout=`은 connect와 read를 **같은 값으로 묶고**, `max_retries=`는 `max_attempts`만
+정해 retry mode를 못 바꾼다.
+
+연결은 빠르거나 아예 안 된다(느리면 리전·자격 문제다) — 읽기 600초를 주려고 연결도
+600초를 주면 잘못된 리전에서 10분을 기다린다. 그리고 mode는 `standard`여야 한다:
+기본 `legacy`는 `ThrottlingException` 처리가 좁고 `verify`가 후보를 병렬로 돌려
+스로틀링에 부딪힌다. `adaptive`는 클라이언트 측 레이트리미팅이 붙어 우리 `Semaphore`와
+이중이 되므로 쓰지 않았다.
+
+그래서 `botocore.config.Config`를 직접 넘긴다. `botocore`를 `pyproject.toml`에 명시
+선언했다 — boto3의 전이 의존이지만 직접 import하면서 그것에 기대지 않는다.
+
+### 상수를 손잡이로 — 값마다 판단했다
+
+"불변식도 환경변수로 빼는 게 좋은 건 빼라"는 요청이었다. 전수 조사해 값마다 갈랐다.
+
+**올린 것** — 타임아웃 3종·MCP stdio 타임아웃·거부 한도·재판정 횟수·웹 사실 상한·
+툴 payload 폭·최소 보기 수·margin 기준·리포트 표시 3종·provider HTTP 타임아웃·
+npm 검색 폭. 총 15개.
+
+**코드에 남긴 것** — 판단 기준은 "값이 아니라 알고리즘·어휘인가"였다.
+
+- `github_repo_health`의 `per_page=1` — **값이 아니라 개수 세는 기법이다.** Link 헤더의
+  마지막 페이지 번호가 곧 기여자 수라서, 2로 바꾸면 `gh.contributors`가 **조용히 틀린
+  값**이 되고 그게 `maturity` 입력이다(불변식 5). 환경변수 후보로 보이는 함정이다
+- `osv`의 `_SEVERITY_ORDER` — GHSA 등급 어휘이고 유효성 검사에도 쓰인다. 오타가 들어오면
+  모든 등급이 조용히 `None`이 되어 `max_severity`가 사라진다
+- `search`의 `_BACKEND = "google"` — v15가 품질 실측으로 확정했고 allowlist와 짝이다.
+  backend만 바꾸면 egress가 즉시 거부한다. 교체 지점은 이미 `SCOUT_SEARCH_PROVIDER`다
+- `rubric`의 점수 밴드·라이선스 목록 — 공식이다. 환경마다 다르면 실행 간 점수를
+  비교할 수 없고, 그 값이 보고서에 나가는 근거 문자열을 만든다
+
+### 범위 밖 값은 시작할 때 터진다
+
+`SCOUT_MIN_ALTERNATIVES`를 올리면서 하한 2를 Pydantic 제약으로 박았다. 1이면 불변식
+18이 꺼지고 v26에서 고친 버그(억지 후보가 1위)가 돌아온다.
+
+조용히 무시하는 클램프(`max(2, 설정)`)를 **기각했다** — "설정 파일에 적은 값과 실제
+동작이 다르다"가 가장 찾기 어려운 버그다. `cli.py`가 이미 `ValidationError`를 잡아
+`[FAIL] Settings 로딩 실패`로 찍으므로 새 경로도 필요 없었다.
+
+### ★ 설정은 값으로 읽지 않고 인자로 넘긴다
+
+이번 작업에서 가장 중요한 규율이다. `Settings`는 `env_file=".env"`라 **항상 로컬
+`.env`를 읽는다.** 함수가 모듈 상수를 직접 읽으면 개발자 로컬 `.env`가 테스트 결과를
+바꾸고, `.env`는 커밋되지 않으므로(불변식 10) **CI는 통과하는데 로컬만 깨지고 재현도
+안 되는** 실패가 된다.
+
+실제로 `test_search_approval`이 `for i in range(5)`로 거부 한도 3을 전제하고 있었다.
+그래서 `SearchGate(approve=..., max_rejections=...)`처럼 값을 인자로 받게 바꿨다 —
+`wrap_web_search(..., budget=...)`가 이미 쓰던 패턴이다. 노드가 `Settings`를 읽어
+넘기고 기본값은 모듈 상수로 남긴다. 테스트는 인자를 안 주므로 `.env`와 무관해진다.
+
+### 곁들여 고친 drift 셋
+
+- **프롬프트가 예산 숫자를 굳히고 있었다** — `"이 실행 전체에서 3회까지 승인된다"`.
+  `SCOUT_DESIGN_WEB_SEARCHES=1`을 주면 프롬프트가 거짓말을 하고 에이전트는 3회 있다고
+  믿는다. `{web_search_budget}`로 주입한다 — `approval._BUDGET_TEMPLATE`이 이미
+  "예산은 단계마다 다르므로 숫자를 문구에 굳히지 않는다"고 적어둔 규율이다
+- **`doctor`가 4를 복사해두고 있었다** — `range(4)`. `SCOUT_LLM_CONCURRENCY`를 올리면
+  doctor가 검사하는 동시성과 실제가 갈려 검사가 무의미해진다. 설정값을 읽게 했고,
+  적용된 타임아웃도 함께 찍는다
+- **`design_node`가 `max_components` 폴백을 3으로 박아두고 있었다** — `search_node`는
+  같은 자리에서 `Settings`를 쓴다. 두 노드의 규율이 달랐다
+
+`SCOUT_LOG_LEVEL`을 걷어냈다 — 아무도 읽지 않는 죽은 설정이었다. 동작하지 않는 손잡이가
+정본 목록에 있으면 그게 거짓이다.
+
+### 새 서버 설정은 화이트리스트를 통과해야 한다 — 테스트가 강제한다
+
+`mcp_client.SERVER_ENV_KEYS`가 접두사 화이트리스트로 자식 프로세스의 환경을 만든다
+(불변식 3). 그래서 **새 이름이 목록에 없으면 `.env`에 써도 값이 도달하지 않고 조용히
+기본값이 쓰인다.** 증상이 "환경변수가 안 먹는다"로만 보인다.
+
+`SCOUT_NET_` 접두사를 정하고, `test_egress`에 **서버 `Settings`의 모든 필드가
+화이트리스트를 통과하는지** 검사하는 테스트를 넣었다. 반대 방향(앱 전용 설정이
+서버로 새지 않는지)도 함께 본다 — 경계가 한 방향만이면 의미가 없다.
+
+실측으로 닫았다: `SCOUT_NET_HTTP_TIMEOUT_SECONDS=0.001`을 주고 **캐시 미스**인 패키지를
+조회하니 실패했고, 실패가 툴 에러로 격하됐다(불변식 11). 처음에 `doctor`로 재봤을 때
+성공한 것은 24시간 디스크 캐시 히트였다 — 캐시가 걸리면 httpx를 아예 안 부르므로
+타임아웃 검증이 불가능하다.
+
+### `.env.example`이 v22 이후 뒤처져 있었다
+
+코드에 있는데 `.env.example`에 없는 설정이 6개였다(`SCOUT_DESIGN_RECURSION_LIMIT` 등
+v22가 코드 상수에서 내린 것들). **옮긴 목적이 절반만 달성된 상태였다** — 사용자는
+파일을 보고 그 손잡이가 존재하는지조차 몰랐다.
+
+08-설정의 `.env` 전문 예시 블록도 같은 이유로 갈려 있었다. **전문을 두 곳에 두지 않기로
+했다** — 문서는 표(항목·기본값·범위·이유)를 지고, 붙여 쓸 파일은 `.env.example`이다.
+
+문서 표류 하나 더 고쳤다: allowlist 기본값이 문서만 `duckduckgo.com`이었다(v15가 품질
+실측으로 `www.google.com`으로 바꿨는데 이 문서만 반영이 안 됐다).
+
+---
+
 ## v30 (2026-09-04) — 리포트가 읽히게: 제목 · 문단 · 중복 · 라벨
 
 사용자가 리포트를 열고 세 가지를 지적했다 — 서술형으로 줄바꿈 없이 나온다 · 제목이 내가

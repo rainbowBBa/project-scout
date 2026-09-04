@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from scout.schemas import Candidate, Component, Interview
     from scout.state import ScoutState
 
-_MAX_REGROUND = 1
+DEFAULT_MAX_REGROUND = 1
 
 
 def _dossier_block(candidate: Candidate) -> str:
@@ -119,6 +119,7 @@ async def _verify_candidate(
     llm: ChatBedrockConverse,
     semaphore: asyncio.Semaphore,
     *,
+    max_reground: int = DEFAULT_MAX_REGROUND,
     runs_dir: str | None = None,
 ) -> Verdict:
     """판정 → 저장 → grounding 대조 → (위반이면) 재판정 → 2차 위반이면 강등.
@@ -129,7 +130,7 @@ async def _verify_candidate(
     violations: list[str] | None = None
     recorded_violations = 0
     verdict = failed_verdict(candidate, "판정을 시작하지 못함")
-    for attempt in range(_MAX_REGROUND + 1):
+    for attempt in range(max_reground + 1):
         async with semaphore:
             verdict = await asyncio.to_thread(
                 judge_candidate,
@@ -144,7 +145,7 @@ async def _verify_candidate(
         violations = grounding.ungrounded(slug, candidate.name, runs_dir=runs_dir)
         if not violations:
             break
-        if attempt == _MAX_REGROUND:
+        if attempt == max_reground:
             # 2차에도 위반 — 더 묻지 않고 강등한다 (3-verify.md "실패 처리").
             recorded_violations = len(violations)
             verdict = grounding.force_low(
@@ -186,6 +187,7 @@ async def _run_verify(
     llm: ChatBedrockConverse,
     concurrency: int,
     *,
+    max_reground: int = DEFAULT_MAX_REGROUND,
     runs_dir: str | None = None,
 ) -> tuple[list[Verdict], list[str]]:
     by_name = {c.name: c for c in components}
@@ -245,6 +247,7 @@ def verify_node(state: ScoutState, *, llm: ChatBedrockConverse) -> dict:
             state["interview"],
             llm,
             settings.scout_llm_concurrency,
+            max_reground=settings.scout_max_reground,
         )
     )
     for gap in gaps:

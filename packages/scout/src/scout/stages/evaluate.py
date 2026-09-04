@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 Computed = dict[str, tuple[tuple[int | None, str], tuple[int | None, str]]]
 
 # 1위와 2위의 overall 차이가 이만큼이면 decisive다 (4-evaluate.md "margin").
-_DECISIVE_GAP = 2
+DEFAULT_DECISIVE_GAP = 2
 _WORD_RE = re.compile(r"[0-9A-Za-z가-힣]{3,}")
 
 
@@ -159,6 +159,8 @@ def normalize(
     component_name: str,
     passing_names: Sequence[str],
     computed: Computed,
+    *,
+    decisive_gap: int = DEFAULT_DECISIVE_GAP,
 ) -> tuple[ElementPick, list[str]]:
     """judge의 출력을 데이터에 맞춘다 — 순위 재정렬 · winner 확정 · margin 계산.
 
@@ -202,7 +204,7 @@ def normalize(
     scores.sort(key=lambda s: ranking.index(s.candidate))
 
     top = [overall_by_name.get(name, 0) for name in ranking[:2]]
-    margin = "decisive" if len(top) < 2 or top[0] - top[1] >= _DECISIVE_GAP else "close"
+    margin = "decisive" if len(top) < 2 or top[0] - top[1] >= decisive_gap else "close"
 
     if pick.winner != ranking[0]:
         warnings.append(
@@ -358,6 +360,7 @@ async def _evaluate_component(
     llm: ChatBedrockConverse,
     semaphore: asyncio.Semaphore,
     *,
+    decisive_gap: int = DEFAULT_DECISIVE_GAP,
     runs_dir: str | None = None,
 ) -> tuple[ElementPick | None, list[str]]:
     """요소 하나: 탈락 기록 → judge → 교정 → 저장. LLM 호출만 스레드로 뺀다.
@@ -403,7 +406,11 @@ async def _evaluate_component(
         )
 
     pick, warnings = normalize(
-        pick, component_name, [v.candidate for v in passing], computed
+        pick,
+        component_name,
+        [v.candidate for v in passing],
+        computed,
+        decisive_gap=decisive_gap,
     )
     warnings += audit(pick, component_name, interview.refined_brief, computed)
     _save_pick(slug, pick, judged=True, runs_dir=runs_dir)
@@ -422,6 +429,7 @@ async def _run_evaluate(
     llm: ChatBedrockConverse,
     concurrency: int,
     *,
+    decisive_gap: int = DEFAULT_DECISIVE_GAP,
     runs_dir: str | None = None,
 ) -> tuple[list[ElementPick], list[str]]:
     by_name = {c.name: c for c in candidates}
@@ -445,6 +453,7 @@ async def _run_evaluate(
                 interview,
                 llm,
                 semaphore,
+                decisive_gap=decisive_gap,
                 runs_dir=runs_dir,
             )
             for name in names

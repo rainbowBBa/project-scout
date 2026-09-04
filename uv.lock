@@ -1208,6 +1208,7 @@ version = "0.1.0"
 source = { editable = "packages/scout" }
 dependencies = [
     { name = "boto3" },
+    { name = "botocore" },
     { name = "jinja2" },
     { name = "langchain" },
     { name = "langchain-aws" },
@@ -1224,6 +1225,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "boto3" },
+    { name = "botocore" },
     { name = "jinja2" },
     { name = "langchain" },
     { name = "langchain-aws" },

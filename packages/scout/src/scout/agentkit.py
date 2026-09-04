@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
     from langchain_core.messages import BaseMessage
 
-_TOOL_PAYLOAD_CHARS = 1200
+DEFAULT_TOOL_PAYLOAD_CHARS = 1200
 
 
 async def run_agent_loop(agent, task: str, limit: int) -> tuple[list, bool]:
@@ -114,7 +114,12 @@ def _truncate(text: str, limit: int) -> str:
     return text if len(text) <= limit else f"{text[:limit]}… (생략)"
 
 
-def build_transcript(calls: Sequence[ToolCall], messages: Sequence[BaseMessage]) -> str:
+def build_transcript(
+    calls: Sequence[ToolCall],
+    messages: Sequence[BaseMessage],
+    *,
+    payload_chars: int = DEFAULT_TOOL_PAYLOAD_CHARS,
+) -> str:
     """에이전트 히스토리를 평문으로 접는다.
 
     원본 메시지를 그대로 다음 프롬프트에 넣으면 tool_use/tool_result 쌍이 새 toolConfig와
@@ -123,7 +128,7 @@ def build_transcript(calls: Sequence[ToolCall], messages: Sequence[BaseMessage])
     lines = []
     for call in calls:
         lines.append(f"[{call.name}] {json.dumps(call.args, ensure_ascii=False)}")
-        lines.append(_truncate(call.raw, _TOOL_PAYLOAD_CHARS))
+        lines.append(_truncate(call.raw, payload_chars))
     final = [
         m for m in messages if isinstance(m, AIMessage) and message_text(m).strip()
     ]
