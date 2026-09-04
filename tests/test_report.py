@@ -4,6 +4,7 @@ LLM도 네트워크도 쓰지 않는 단계라 store에 손으로 시드하고 �
 (stages/5-report.md 완료 기준).
 """
 
+import re
 from pathlib import Path
 
 import pytest
@@ -300,9 +301,12 @@ def test_render_is_self_contained_and_shows_score_reason_under_bar(runs_dir: str
     assert "근접" in html  # margin close 배지
     assert "computed" in html and "judged" in html and "근거 없음" in html
     assert "제약상 재연결 내장이 중요" in html  # score_reason
-    idx_bar = html.index('style="width: 80%"')  # overall=4 → 80%
-    idx_reason = html.index("제약상 재연결 내장이 중요", idx_bar)
-    assert idx_reason - idx_bar < 400  # 막대 바로 아래에 이유가 붙는다
+    # 막대 바로 아래에 점수 근거가 붙는다. "선택한 기술" 표는 근거를 접으므로
+    # (표 높이가 화면을 덮었다) 이 단언은 매크로가 근거를 그대로 붙이는 곳을 본다
+    compared = html[html.index("결정 지점별 비교") :]
+    idx_bar = compared.index('style="width: 80%"')  # overall=4 → 80%
+    idx_reason = compared.index("제약상 재연결 내장이 중요", idx_bar)
+    assert idx_reason - idx_bar < 400
     assert "<details" in html and "</details>" in html
 
 
@@ -618,3 +622,39 @@ def test_screen_labels_are_korean(runs_dir: str):
     assert ">계산<" in html and ">판정<" in html
     for leftover in ("gaps:", ">link<", "confidence:", "<th>fact_id</th>"):
         assert leftover not in html, f"화면에 영어가 남았다: {leftover}"
+
+
+def test_stack_table_folds_its_prose(runs_dir: str):
+    """선택한 기술 표는 막대만 펼쳐 두고 산문을 접는다.
+
+    실측에서 선정 이유 426자 · 점수 근거 276자가 한 행에 그대로 들어가 표 한 행이
+    화면을 덮었다. 막대는 남긴다 — 비교가 한눈에 보이는 것이 이 표의 목적이다.
+    """
+    _seed_basic(runs_dir)
+
+    html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
+    table = html[html.index("선택한 기술") : html.index("가장 큰 위험")]
+
+    assert 'style="width: 80%"' in table, "막대가 사라졌다 — 비교가 안 보인다"
+    assert '<details class="folded">' in table, "산문이 접히지 않았다"
+    # 선정 이유와 점수 근거가 같은 접힌 물 안에 있다
+    assert table.count('<details class="folded">') == 1
+    assert "점수 근거" in table
+    # 접었다고 지우지 않는다 (불변식 12)
+    assert "제약상 재연결 내장이 중요" in table
+
+
+def test_next_command_hints_name_real_stages(runs_dir: str):
+    """리포트가 찍는 명령은 붙여넣으면 돌아가야 한다 (001/09-출력양식.md).
+
+    `analyze`가 `design`으로 바뀐 뒤에도 이 힌트가 남아 실패하는 명령을 찍고 있었다.
+    """
+    from scout.cli import ShowStage
+
+    _seed_basic(runs_dir)
+    html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
+
+    hints = html[html.index("다음 명령어") : html.index("결정 지점별 비교")]
+    stages = {s.value for s in ShowStage}
+    for token in re.findall(r"scout show \S+ (\w+)", hints):
+        assert token in stages, f"'{token}'은 scout show가 받지 않는 단계다"

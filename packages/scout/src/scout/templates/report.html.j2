@@ -134,7 +134,7 @@
 <body>
 <main>
 
-{% macro score_bar(entry, label) %}
+{% macro score_bar(entry, label, reason=true) %}
   <div class="score-row">
     <span class="score-label">{{ label }}</span>
     {% if entry and entry.score is not none %}
@@ -145,7 +145,7 @@
       <span class="badge badge-unavailable">근거 없음</span>
     {% endif %}
   </div>
-  {% if entry and entry.reason %}<div class="score-reason">{{ entry.reason | sentences }}</div>{% endif %}
+  {% if reason and entry and entry.reason %}<div class="score-reason">{{ entry.reason | sentences }}</div>{% endif %}
 {% endmacro %}
 
 {# 제목 + 제약 한 줄 (5-report.md). refined_brief 전문은 "결정 요약"에 있다 #}
@@ -254,16 +254,25 @@
   <div class="banner">⚠ 통과 후보가 없는 결정 지점 {{ no_winner|length }}개: {{ no_winner|join(', ') }} — 아래 "결정 지점별 비교"에서 탈락 사유를 확인하세요.</div>
   {% endif %}
   {% if stack %}
-  {# 선정 이유의 전문은 여기에만 둔다 — 아래 비교 섹션은 접는다 (5-report.md) #}
+  {# 막대는 남기고 산문은 접는다 — 비교가 한눈에 보이는 것이 이 표의 목적이다 #}
   <table>
-    <thead><tr><th>결정 지점</th><th>고른 것</th><th>종합</th><th>선정 이유</th></tr></thead>
+    <thead><tr><th>결정 지점</th><th>고른 것</th><th>종합</th><th>이유</th></tr></thead>
     <tbody>
     {% for row in stack %}
       <tr>
         <td>{{ row.component }}</td>
         <td>{{ row.candidate }}{% if row.margin == "close" %} <span class="badge badge-close">근접</span>{% endif %}</td>
-        <td style="min-width:160px">{{ score_bar(row.overall, "종합") }}</td>
-        <td>{{ row.winner_reason | sentences }}</td>
+        <td style="min-width:160px">{{ score_bar(row.overall, "종합", reason=false) }}</td>
+        <td>
+          <details class="folded">
+            <summary>{{ row.winner_reason | summary_line }}</summary>
+            {{ row.winner_reason | sentences }}
+            {% if row.overall and row.overall.reason %}
+            <p class="score-reason">점수 근거</p>
+            {{ row.overall.reason | sentences }}
+            {% endif %}
+          </details>
+        </td>
       </tr>
     {% endfor %}
     </tbody>
@@ -340,7 +349,7 @@
   <summary>다음 명령어</summary>
   <p>지금까지 결과를 다시 보려면:</p>
   <ul class="plain">
-    <li><code>scout show {{ slug }} analyze</code> — 요소 전체(걸러진 것 포함)</li>
+    <li><code>scout show {{ slug }} design</code> — 결정 지점 전체(걸러진 것 포함)</li>
     <li><code>scout show {{ slug }} search</code> — 후보별 사실 원본(dossier)</li>
     <li><code>scout show {{ slug }} verify</code> — 판정 전문</li>
     <li><code>scout show {{ slug }} evaluate</code> — 점수·순위 전문</li>

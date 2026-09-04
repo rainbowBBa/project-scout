@@ -192,7 +192,9 @@ runs (slug, description, created_at, interview_json)
 
 `refined_brief` · `assumptions`는 `interview_json` 안에 있다.
 
-`slug`는 설명에서 만든다 (예: `2026-09-02-team-chat-ai-summary`).
+`slug`는 `<날짜>-<설명 해시 8자>`다 (예: `2026-09-04-7c3f9a1b`). 설명에서 단어를
+뽑지 않는다 — 한국어 설명에서는 기술 토큰만 남은 잔해가 되고, 읽을 이름은 `title`이
+맡는다.
 같은 slug로 다시 실행하면 이어서 돈다.
 
 ---

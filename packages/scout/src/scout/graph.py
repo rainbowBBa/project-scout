@@ -7,7 +7,6 @@ LangGraph가 끝난 노드를 건너뛰고 이어서 돈다 (02-파이프라인.
 from __future__ import annotations
 
 import hashlib
-import re
 from typing import TYPE_CHECKING
 
 from langgraph.graph import END, START, StateGraph
@@ -61,19 +60,14 @@ def build_graph(
     return graph.compile(checkpointer=checkpointer)
 
 
-_SLUG_WORD_RE = re.compile(r"[A-Za-z0-9]+")
-
-
 def make_slug(description: str, *, today: str) -> str:
-    """설명에서 slug를 만든다 — ASCII 단어만 뽑고, 하나도 없으면 설명 해시로 대체한다.
+    """`<날짜>-<설명 해시 8자>`. 폴더명이자 체크포인터 `thread_id`다.
 
-    같은 날 같은 설명으로 다시 실행하면 같은 slug가 나와 체크포인터가 이어서 돈다
-    (stages/0-interview.md "같은 slug로 다시 실행하면 이어서 돈다").
+    설명만의 함수여야 한다 — 같은 날 같은 설명으로 다시 실행하면 같은 slug가 나와
+    체크포인터가 끝난 단계를 건너뛴다. `hash()`는 프로세스마다 랜덤이라 못 쓴다.
+
+    설명에서 단어를 뽑아 쓰지 않는다. 한국어 설명에서는 기술 토큰만 남은 잔해가
+    되고(`2026-09-03-200-ai-3-typescript-200-3`), 읽을 이름은 리포트 제목이 맡는다.
     """
-    words = _SLUG_WORD_RE.findall(description.lower())
-    if words:
-        tail = "-".join(words)[:40].rstrip("-")
-    else:
-        # hash()는 프로세스마다 랜덤이라 재실행 시 같은 slug가 안 나온다 — sha256을 쓴다.
-        tail = f"run-{hashlib.sha256(description.encode()).hexdigest()[:8]}"
-    return f"{today}-{tail}"
+    digest = hashlib.sha256(description.encode()).hexdigest()[:8]
+    return f"{today}-{digest}"
