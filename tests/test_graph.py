@@ -6,7 +6,7 @@
 
 from scout.graph import make_slug
 
-TODAY = "2026-09-04"
+TODAY = "20260904"
 
 
 def test_same_description_gives_the_same_slug():
@@ -47,4 +47,4 @@ def test_korean_only_description_still_gets_a_slug():
 def test_date_separates_runs_across_days():
     same = "팀 채팅 앱"
 
-    assert make_slug(same, today="2026-09-04") != make_slug(same, today="2026-09-05")
+    assert make_slug(same, today="20260904") != make_slug(same, today="20260905")

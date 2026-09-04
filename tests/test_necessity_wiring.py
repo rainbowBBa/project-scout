@@ -168,10 +168,16 @@ def test_search_skips_entirely_when_nothing_passes(runs_dir: str):
 def _rendered_sections(runs_dir: str) -> tuple[str, str, str]:
     """보고서를 세 섹션으로 잘라 돌려준다 — 어느 섹션에 실렸는지가 검사 대상이다."""
     html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
-    closed_at = html.index("이미 정해진 것")
-    deferred_at = html.index("지금 만들지 않아도 되는 것")
-    skipped_at = html.index("이번에 다루지 않은 것")
-    return html[closed_at:deferred_at], html[deferred_at:skipped_at], html[skipped_at:]
+    # 섹션 제목과 목차 링크가 같은 문자열이라 앵커 id로 가른다
+    closed_at = html.index('id="closed"')
+    deferred_at = html.index('id="deferred"')
+    skipped_at = html.index('id="skipped"')
+    baseline_at = html.index('id="baseline"')
+    return (
+        html[closed_at:deferred_at],
+        html[deferred_at:skipped_at],
+        html[skipped_at:baseline_at],
+    )
 
 
 def test_deferred_and_closed_land_in_different_sections(runs_dir: str):

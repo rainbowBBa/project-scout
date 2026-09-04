@@ -129,20 +129,147 @@
   .folded > summary::marker { color: var(--muted); }
   .cited { color: var(--accent); }
   footer { color: var(--muted); font-size: 0.8rem; text-align: center; margin-top: 2rem; }
+
+  /* ── 목차 · 그룹 · 팝오버 (JS 0줄 · 웹폰트 0) ────────────────────── */
+
+  /* 좁은 화면 — 본문 위 정적 블록 */
+  nav.toc {
+    max-width: 880px;
+    margin: 0 auto 2rem;
+    padding: 0.6rem 1rem;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 0.85rem;
+  }
+  nav.toc ol {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-wrap: wrap; gap: 0.15rem 0.7rem; align-items: baseline;
+  }
+  .toc-group { color: var(--muted); font-weight: 600; font-size: 0.78rem; }
+  nav.toc a {
+    color: var(--muted); text-decoration: none;
+    display: block; padding: 0.05rem 0.35rem; border-radius: 5px;
+  }
+  nav.toc a:hover, nav.toc a:focus { color: var(--text); background: var(--accent-soft); }
+
+  /* 넓은 화면 — 왼쪽 빈 공간에 고정. 880px 본문 + 목차가 들어가는 폭부터 */
+  @media (min-width: 1340px) {
+    nav.toc {
+      position: fixed; top: 2rem;
+      left: max(1rem, calc(50% - 440px - 17rem));
+      width: 15rem; max-height: calc(100vh - 4rem); overflow-y: auto;
+      margin: 0; padding: 0; background: transparent; border: 0;
+    }
+    nav.toc ol { display: block; }
+    .toc-group { margin-top: 0.7rem; }
+    nav.toc a { border-left: 2px solid transparent; border-radius: 0 5px 5px 0; }
+    nav.toc a:hover, nav.toc a:focus { border-left-color: var(--accent); }
+  }
+
+  /* 앵커로 이동한 곳을 표시한다 — 어디로 갔는지 안 보이면 목차가 반쪽이다 */
+  [id] { scroll-margin-top: 1.5rem; }
+  section:target, details:target { outline: 2px solid var(--accent); outline-offset: 4px; }
+
+  /* 그룹 — 무게 차이가 곧 내용 구분이다 */
+  .group { margin: 0 0 3rem; }
+  .group-head {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.1rem 0.7rem;
+    margin: 0 0 1.25rem; padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--border);
+  }
+  .group-label { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.01em; }
+  .group-note { color: var(--muted); font-size: 0.85rem; margin: 0; }
+  /* 최상위 details도 섹션과 같은 판으로 — 그룹 안에서 무게가 들쭉날쭉하지 않게 */
+  .group > details {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 1rem 1.5rem; margin-bottom: 1.25rem;
+  }
+  .group-conclusion .group-head { border-bottom-color: var(--accent); }
+  .group-conclusion .group-label { color: var(--accent); }
+  .group-evidence .group-label { color: var(--muted); }
+  .group-evidence > section, .group-evidence > details {
+    background: transparent; border-style: dashed;
+  }
+
+  /* 펼칠 수 있다는 게 보여야 한다 */
+  summary:hover { color: var(--accent); }
+  details[open] > summary { margin-bottom: 0.4rem; }
+  .folded { border: 1px dashed var(--border); border-radius: 8px; padding: 0.3rem 0.6rem; }
+  .folded[open] { background: var(--bg); }
+
+  /* 보조 설명 — 호버와 포커스 둘 다 받는다. 터치 기기에는 호버가 없다 */
+  .hint { position: relative; cursor: help; border-bottom: 1px dotted currentColor; }
+  .hint > .hint-body {
+    position: absolute; left: 0; bottom: calc(100% + 0.4rem); z-index: 20;
+    width: max-content; max-width: 17rem;
+    padding: 0.5rem 0.7rem;
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+    font-size: 0.8rem; font-weight: 400; line-height: 1.55;
+    text-align: left; white-space: normal; word-break: keep-all;
+    visibility: hidden; opacity: 0; transition: opacity 0.12s ease;
+  }
+  .hint:hover > .hint-body, .hint:focus > .hint-body, .hint:focus-within > .hint-body {
+    visibility: visible; opacity: 1;
+  }
+  /* 좁은 화면에서는 화면 하단에 붙인다 — absolute면 숨겨진 상태로도 폭을 차지해
+     페이지가 가로로 스크롤된다(420px 실측 +179px). fixed는 scrollWidth에 기여하지 않는다 */
+  @media (max-width: 640px) {
+    .hint > .hint-body {
+      position: fixed; inset: auto 1rem 1rem; width: auto; max-width: none; z-index: 60;
+    }
+  }
+
+  /* 이 문서의 목적은 공유다 — 인쇄에서 접힌 내용이 사라지면 안 된다 */
+  @media print {
+    nav.toc, .hint-body { display: none; }
+    details:not([open]) > *:not(summary) { display: block; }
+    body { padding: 0; background: #fff; color: #000; }
+    .group > section, .group > details { break-inside: avoid; }
+  }
 </style>
 </head>
 <body>
+{# 목차 — CSS만으로 넓은 화면에서는 왼쪽 고정, 좁으면 본문 위로 내려간다 #}
+<nav class="toc">
+  <ol>
+    <li class="toc-group">결론</li>
+    <li><a href="#recommended">권장 설계</a></li>
+    <li><a href="#picked">선택한 기술</a></li>
+    <li class="toc-group">전제</li>
+    <li><a href="#closed">이미 정해진 것</a></li>
+    <li><a href="#deferred">지금 만들지 않아도 되는 것</a></li>
+    <li><a href="#skipped">이번에 다루지 않은 것</a></li>
+    <li><a href="#baseline">기본 설계 (조사 전)</a></li>
+    <li class="toc-group">근거</li>
+    <li><a href="#compared">결정 지점별 비교</a></li>
+    <li><a href="#rejected">탈락 사유</a></li>
+    <li><a href="#facts">수집한 사실</a></li>
+    <li><a href="#commands">다음 명령어</a></li>
+  </ol>
+</nav>
 <main>
+
+{# 보조 설명 — 짧은 것만 팝오버로 준다. 긴 산문은 details로 접는다 #}
+{% macro hint(text, body, cls="") %}
+<span class="hint badge {{ cls }}" tabindex="0">{{ text }}<span class="hint-body">{{ body }}</span></span>
+{%- endmacro %}
 
 {% macro score_bar(entry, label, reason=true) %}
   <div class="score-row">
-    <span class="score-label">{{ label }}</span>
+    {% if label %}<span class="score-label">{{ label }}</span>{% endif %}
     {% if entry and entry.score is not none %}
       <div class="bar-track"><div class="bar-fill" style="width: {{ entry.score * 20 }}%"></div></div>
       <span class="score-num">{{ entry.score }}</span>
-      <span class="badge badge-{{ entry.source }}">{{ entry.source | source_label }}</span>
+      {% if entry.source == "computed" %}
+      {{ hint("계산", "rubric.py의 공식이 사실에서 계산한 값이다. judge가 낡은 사실을 무시해도 이 계산이 잡는다.", "badge-computed") }}
+      {% else %}
+      {{ hint("판정", "judge가 dossier를 읽고 매긴 값이다. maturity·risk의 평균이 아니다.", "badge-judged") }}
+      {% endif %}
     {% else %}
-      <span class="badge badge-unavailable">근거 없음</span>
+      {{ hint("근거 없음", "계산할 사실이 없다. 낮은 게 아니라 없는 것이다 — 0으로 대접하면 실제보다 불리해 보인다.", "badge-unavailable") }}
     {% endif %}
   </div>
   {% if reason and entry and entry.reason %}<div class="score-reason">{{ entry.reason | sentences }}</div>{% endif %}
@@ -160,8 +287,14 @@
 <div class="banner">⚠ 파이프라인이 끝까지 실행되지 않았습니다 — 아래는 지금까지 저장된 결과입니다.</div>
 {% endif %}
 
+<div class="group group-conclusion">
+  <div class="group-head">
+    <span class="group-label">결론</span>
+    <p class="group-note">이것만 읽어도 된다.</p>
+  </div>
+
 {# 최상단 — 가장 먼저 읽어야 하는 것. evaluate가 확정한 v2다 #}
-<section class="final-design">
+<section id="recommended" class="final-design">
   <h2>★ 권장 설계</h2>
   {% if final_design %}
   {# sentences가 <p>를 만든다 — 또 감싸면 중첩 <p>로 무효 HTML이 된다 #}
@@ -216,39 +349,7 @@
   {% endif %}
 </section>
 
-{# v1 대조 — 같은 이름의 필드를 나란히 놓기만 한다. 무엇이 바뀌었는지는
-   위의 changes_from_design이 말한다 #}
-<details>
-  <summary>기본 설계 (조사 전) — v1 대조</summary>
-  {% if architecture %}
-  {{ architecture.summary | sentences }}
-  <table>
-    <thead><tr><th></th><th>기본 설계</th><th>권장 설계</th></tr></thead>
-    <tbody>
-      <tr>
-        <td><strong>구조</strong></td>
-        <td><pre class="prose">{{ architecture.shape }}</pre></td>
-        <td><pre class="prose">{{ final_design.shape if final_design else "—" }}</pre></td>
-      </tr>
-      <tr>
-        <td><strong>데이터 흐름</strong></td>
-        <td><pre class="prose">{{ architecture.data_flow }}</pre></td>
-        <td><pre class="prose">{{ final_design.data_flow if final_design else "—" }}</pre></td>
-      </tr>
-    </tbody>
-  </table>
-  <h3>설계 단계에서 답하지 못한 질문</h3>
-  {% if architecture.open_questions %}
-  <ul class="plain">{% for q in architecture.open_questions %}<li>{{ q }}</li>{% endfor %}</ul>
-  {% else %}
-  <p class="empty">해당 없음 — 설계 단계에서 미해결로 남긴 질문이 없습니다.</p>
-  {% endif %}
-  {% else %}
-  <p class="empty">해당 없음 — 설계 본문이 저장되지 않았습니다.</p>
-  {% endif %}
-</details>
-
-<section>
+<section id="picked">
   <h2>선택한 기술</h2>
   {% if no_winner %}
   <div class="banner">⚠ 통과 후보가 없는 결정 지점 {{ no_winner|length }}개: {{ no_winner|join(', ') }} — 아래 "결정 지점별 비교"에서 탈락 사유를 확인하세요.</div>
@@ -261,8 +362,8 @@
     {% for row in stack %}
       <tr>
         <td>{{ row.component }}</td>
-        <td>{{ row.candidate }}{% if row.margin == "close" %} <span class="badge badge-close">근접</span>{% endif %}</td>
-        <td style="min-width:160px">{{ score_bar(row.overall, "종합", reason=false) }}</td>
+        <td>{{ row.candidate }}{% if row.margin == "close" %} {{ hint("근접", "1위와 2위의 종합 점수 차이가 작다. 2위도 합리적 선택지라는 뜻이다.", "badge-close") }}{% endif %}</td>
+        <td style="min-width:150px">{{ score_bar(row.overall, "", reason=false) }}</td>
         <td>
           <details class="folded">
             <summary>{{ row.winner_reason | summary_line }}</summary>
@@ -303,9 +404,17 @@
   <p class="empty">해당 없음 — interview가 명세를 만들지 못했습니다.</p>
   {% endif %}
 </section>
+</div>
+
+
+<div class="group group-premise">
+  <div class="group-head">
+    <span class="group-label">전제</span>
+    <p class="group-note">이 결론이 무엇을 깔고 있나.</p>
+  </div>
 
 {# 권장 설계가 깔고 있는 전제. "필요 없어서"와 다른 섹션이다 (불변식 17) #}
-<section>
+<section id="closed">
   <h2>🔒 이미 정해진 것</h2>
   {% if closed %}
   <ul class="plain">
@@ -318,7 +427,7 @@
   {% endif %}
 </section>
 
-<section>
+<section id="deferred">
   <h2>💡 지금 만들지 않아도 되는 것</h2>
   {% if deferred %}
   <ul class="plain">
@@ -331,7 +440,7 @@
   {% endif %}
 </section>
 
-<section>
+<section id="skipped">
   <h2>이번에 다루지 않은 것</h2>
   {% if skipped %}
   <ul class="plain">
@@ -345,24 +454,47 @@
   {% endif %}
 </section>
 
-<details>
-  <summary>다음 명령어</summary>
-  <p>지금까지 결과를 다시 보려면:</p>
-  <ul class="plain">
-    <li><code>scout show {{ slug }} design</code> — 결정 지점 전체(걸러진 것 포함)</li>
-    <li><code>scout show {{ slug }} search</code> — 후보별 사실 원본(dossier)</li>
-    <li><code>scout show {{ slug }} verify</code> — 판정 전문</li>
-    <li><code>scout show {{ slug }} evaluate</code> — 점수·순위 전문</li>
-  </ul>
-  {% if stack %}
-  <p>확정된 후보:</p>
-  <ul class="plain">
-    {% for row in stack %}<li>{{ row.component }} → {{ row.candidate }}</li>{% endfor %}
-  </ul>
+{# v1 대조 — 같은 이름의 필드를 나란히 놓기만 한다. 무엇이 바뀌었는지는
+   위의 changes_from_design이 말한다 #}
+<details id="baseline">
+  <summary>기본 설계 (조사 전) — v1 대조</summary>
+  {% if architecture %}
+  {{ architecture.summary | sentences }}
+  <table>
+    <thead><tr><th></th><th>기본 설계</th><th>권장 설계</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>구조</strong></td>
+        <td><pre class="prose">{{ architecture.shape }}</pre></td>
+        <td><pre class="prose">{{ final_design.shape if final_design else "—" }}</pre></td>
+      </tr>
+      <tr>
+        <td><strong>데이터 흐름</strong></td>
+        <td><pre class="prose">{{ architecture.data_flow }}</pre></td>
+        <td><pre class="prose">{{ final_design.data_flow if final_design else "—" }}</pre></td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>설계 단계에서 답하지 못한 질문</h3>
+  {% if architecture.open_questions %}
+  <ul class="plain">{% for q in architecture.open_questions %}<li>{{ q }}</li>{% endfor %}</ul>
+  {% else %}
+  <p class="empty">해당 없음 — 설계 단계에서 미해결로 남긴 질문이 없습니다.</p>
+  {% endif %}
+  {% else %}
+  <p class="empty">해당 없음 — 설계 본문이 저장되지 않았습니다.</p>
   {% endif %}
 </details>
+</div>
 
-<section>
+
+<div class="group group-evidence">
+  <div class="group-head">
+    <span class="group-label">근거</span>
+    <p class="group-note">결론을 못 믿겠으면 여기를 본다.</p>
+  </div>
+
+<section id="compared">
   <h2>결정 지점별 비교</h2>
   {% if elements %}
   {% for el in elements %}
@@ -373,7 +505,7 @@
       {{ "✔" if c.rank == 1 else ("✘" if c.rank is none else "·") }} {{ c.name }}
     </span>
     {% if c.kind %}<span class="badge">{{ c.kind }}</span>{% endif %}
-    {% if c.grounding_violations %}<span class="badge badge-violation">근거 위반 {{ c.grounding_violations }}건</span>{% endif %}
+    {% if c.grounding_violations %}{{ hint("근거 위반 " ~ c.grounding_violations ~ "건", "judge가 dossier에 없는 사실을 인용했다. 코드가 SQL로 대조해 걷어낸 횟수다.", "badge-violation") }}{% endif %}
 
     {# 점수만 보이면 무엇을 고른 건지 알 수 없다 #}
     {% if c.what_it_is %}<p class="score-reason">{{ c.what_it_is }}</p>{% endif %}
@@ -419,7 +551,7 @@
   {% endif %}
 </section>
 
-<details>
+<details id="rejected">
   <summary>탈락 사유</summary>
   {% if rejections %}
   <table>
@@ -435,18 +567,18 @@
   {% endif %}
 </details>
 
-<details>
+<details id="facts">
   <summary>수집한 사실</summary>
   {% if facts_by_candidate %}
   {% for group in facts_by_candidate %}
   <h3>
     {{ group.candidate }} ({{ group.component }}{% if group.kind %} · {{ group.kind }}{% endif %})
-    {% if group.verdict and group.verdict.confidence == "low" %}<span class="badge badge-low">신뢰도 낮음</span>{% endif %}
-    {% if group.grounding_violations %}<span class="badge badge-violation">근거 위반 {{ group.grounding_violations }}건</span>{% endif %}
+    {% if group.verdict and group.verdict.confidence == "low" %}{{ hint("신뢰도 낮음", "judge가 스스로 낮다고 적었거나, 인용이 dossier 밖을 가리켜 코드가 강등했다.", "badge-low") }}{% endif %}
+    {% if group.grounding_violations %}{{ hint("근거 위반 " ~ group.grounding_violations ~ "건", "judge가 dossier에 없는 사실을 인용했다. 코드가 SQL로 대조해 걷어낸 횟수다.", "badge-violation") }}{% endif %}
   </h3>
   {% if group.facts %}
   <table>
-    <thead><tr><th>사실 id</th><th>항목</th><th>값</th><th>출처</th><th>조회일</th></tr></thead>
+    <thead><tr><th>{{ hint("사실 id", "`<출처>.<항목>` 규칙이다 (npm.last_release · gh.archived · web.3). judge는 이 id로만 인용할 수 있다.") }}</th><th>항목</th><th>값</th><th>출처</th><th>조회일</th></tr></thead>
     <tbody>
     {% for row in group.facts %}
       <tr class="fact-row">
@@ -478,6 +610,25 @@
   </ul>
   {% endif %}
 </details>
+
+<details id="commands">
+  <summary>다음 명령어</summary>
+  <p>지금까지 결과를 다시 보려면:</p>
+  <ul class="plain">
+    <li><code>scout show {{ slug }} design</code> — 결정 지점 전체(걸러진 것 포함)</li>
+    <li><code>scout show {{ slug }} search</code> — 후보별 사실 원본(dossier)</li>
+    <li><code>scout show {{ slug }} verify</code> — 판정 전문</li>
+    <li><code>scout show {{ slug }} evaluate</code> — 점수·순위 전문</li>
+  </ul>
+  {% if stack %}
+  <p>확정된 후보:</p>
+  <ul class="plain">
+    {% for row in stack %}<li>{{ row.component }} → {{ row.candidate }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</details>
+</div>
+
 
 <footer>project-scout · {{ slug }}</footer>
 </main>

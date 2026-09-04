@@ -226,7 +226,7 @@ def _run_pipeline(
     if description is None:
         description = typer.prompt("프로젝트 설명 입력")
 
-    slug = make_slug(description, today=datetime.now(UTC).date().isoformat())
+    slug = make_slug(description, today=datetime.now(UTC).strftime("%Y%m%d"))
     llm = make_llm(settings)
 
     checkpoint_path = f"{settings.scout_runs_dir}/{slug}/checkpoints.sqlite"

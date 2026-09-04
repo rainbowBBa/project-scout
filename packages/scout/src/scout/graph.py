@@ -61,7 +61,7 @@ def build_graph(
 
 
 def make_slug(description: str, *, today: str) -> str:
-    """`<날짜>-<설명 해시 8자>`. 폴더명이자 체크포인터 `thread_id`다.
+    """`<YYYYMMDD>-<설명 해시 8자>`. 폴더명이자 체크포인터 `thread_id`다.
 
     설명만의 함수여야 한다 — 같은 날 같은 설명으로 다시 실행하면 같은 slug가 나와
     체크포인터가 끝난 단계를 건너뛴다. `hash()`는 프로세스마다 랜덤이라 못 쓴다.

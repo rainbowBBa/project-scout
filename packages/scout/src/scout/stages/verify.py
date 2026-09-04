@@ -162,6 +162,7 @@ async def _verify_candidate(
                 candidate.name,
                 f"grounding 위반 {len(violations)}건 — dossier에 없는 인용: "
                 f"{', '.join(violations)}",
+                runs_dir=runs_dir,
             )
 
     solved = "해결" if verdict.solves_it else "미해결"
@@ -174,7 +175,9 @@ async def _verify_candidate(
         store.upsert_verdict(
             slug, degraded, grounding_violations=recorded_violations, runs_dir=runs_dir
         )
-        store.add_gap(slug, candidate.name, "인용 없는 판정 — confidence 강등")
+        store.add_gap(
+            slug, candidate.name, "인용 없는 판정 — confidence 강등", runs_dir=runs_dir
+        )
         verdict = degraded
     return verdict
 

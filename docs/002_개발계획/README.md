@@ -100,7 +100,9 @@ Day 3 — analyze → design 재설계 (001 CHANGELOG v20~v22)
 [~] STEP 10  설계확정     코드 완료 5b55985 · E2E 완주 · final_designs 1행 · v1≠v2 대조 성립
                           integration_notes·combination_risks 확인 · changes_from_design 미확인
 [x] STEP 11  리포트       최상단 권장 설계 · v1↔v2 대조 · "이미 정해진 부분" · CDN 0
-[~] STEP 12  검증        테스트 6종 전부 존재 · pytest 94개 통과 · 격리 두 겹 실측
+                          결론/전제/근거 그룹 · 고정 목차 · 배지 팝오버 · 인쇄 (001 v33)
+                          Playwright로 레이아웃·포커스·인쇄·다크모드 실측
+[~] STEP 12  검증        테스트 6종 전부 존재 · pytest 146개 통과 · 격리 두 겹 실측
                           (TID251 3건 검출 · MCP 단독 sync에 langchain 0) ·
                           E2E 완주와 육안 확인만 미실행
 [~] STEP 13  선택        osv_query 되돌림 완료 (001 v28) · 재판정 루프는 STEP 06에서

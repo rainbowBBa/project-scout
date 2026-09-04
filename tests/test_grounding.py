@@ -260,3 +260,24 @@ def test_all_citations_bogus_degrades_twice_and_keeps_count(runs_dir: str):
     assert verdict.confidence == "low"
     assert grounding.NO_CITATION_CLAIM in verdict.unsupported_claims
     assert _grounding_violations(runs_dir, "socket.io") == 1
+
+
+def test_reground_writes_only_inside_the_run_directory(
+    runs_dir: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """★ `runs_dir`을 일부 store 호출에만 넘기면 나머지가 기본 `runs/`로 새어나간다.
+
+    실측으로 `runs/test-run/scout.db`가 저장소에 생겼다. 프로덕션은 `runs_dir`을 넘기지
+    않고 `SCOUT_RUNS_DIR`로 해결하므로 사용자 영향은 없지만, 테스트가 서로의 상태를
+    읽게 되고 저장소가 더러워진다.
+    """
+    fallback = tmp_path / "leaked"
+    monkeypatch.setenv("SCOUT_RUNS_DIR", str(fallback))
+    candidate = _seed(runs_dir)
+    llm = _StubLLM(_verdict(["npm.last_release", "gh.stars"]))  # 계속 위반 → gap을 쓴다
+
+    _run_verify_one(llm, candidate, runs_dir)
+
+    assert not fallback.exists(), (
+        f"기본 runs 디렉터리로 쓰기가 새어나갔다: {list(fallback.rglob('*'))}"
+    )

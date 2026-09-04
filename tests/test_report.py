@@ -26,6 +26,24 @@ from scout.stages.report import (
 
 SLUG = "test-run"
 
+# 섹션 제목과 목차 링크가 같은 문자열이라 이름으로 자르면 목차를 잡는다 — 앵커로 가른다
+_ANCHORS = (
+    "recommended", "picked", "closed", "deferred", "skipped",
+    "baseline", "compared", "rejected", "facts", "commands",
+)
+
+
+def _sections(html: str) -> dict[str, str]:
+    """앵커 id로 섹션 본문을 가른다."""
+    marks = sorted((html.index(f'id="{a}"'), a) for a in _ANCHORS)
+    out = {}
+    for i, (pos, name) in enumerate(marks):
+        end = marks[i + 1][0] if i + 1 < len(marks) else len(html)
+        out[name] = html[pos:end]
+    return out
+
+
+
 
 @pytest.fixture
 def runs_dir(tmp_path: Path) -> str:
@@ -303,7 +321,7 @@ def test_render_is_self_contained_and_shows_score_reason_under_bar(runs_dir: str
     assert "제약상 재연결 내장이 중요" in html  # score_reason
     # 막대 바로 아래에 점수 근거가 붙는다. "선택한 기술" 표는 근거를 접으므로
     # (표 높이가 화면을 덮었다) 이 단언은 매크로가 근거를 그대로 붙이는 곳을 본다
-    compared = html[html.index("결정 지점별 비교") :]
+    compared = _sections(html)["compared"]
     idx_bar = compared.index('style="width: 80%"')  # overall=4 → 80%
     idx_reason = compared.index("제약상 재연결 내장이 중요", idx_bar)
     assert idx_reason - idx_bar < 400
@@ -378,8 +396,8 @@ def test_final_design_is_rendered_at_the_top(runs_dir: str):
     assert "룸 이름과 채널 ID를 같은 값으로 쓴다" in html
     assert "단일 프로세스 전제가 깨지면" in html
     assert "인증: priority가 밀려" in html
-    # 권장 설계가 고른 결과보다 먼저 나온다 — 최상단이 권장 설계라는 계약 (STEP 11)
-    assert html.index("권장 설계") < html.index("선택한 기술")
+    # 최상단이 권장 설계라는 계약 (STEP 11)
+    assert html.index('id="recommended"') < html.index('id="picked"')
 
 
 def test_v1_is_kept_for_contrast(runs_dir: str):
@@ -536,11 +554,11 @@ def test_title_comes_from_interview_not_the_raw_question(runs_dir: str):
     html = render_report(ctx)
 
     assert ctx["title"] == "사내 AI 요약 팀 채팅 앱"
-    assert html.index("사내 AI 요약 팀 채팅 앱") < html.index("권장 설계")
+    assert html.index("사내 AI 요약 팀 채팅 앱") < html.index('id="recommended"')
     for chip in ("사내 200명", "3인 TypeScript", "월 $200"):
         assert chip in html
     # refined_brief 전문은 제목 밑이 아니라 본문에 있다
-    assert html.index("구체화된 명세") > html.index("권장 설계")
+    assert html.index("구체화된 명세") > html.index('id="recommended"')
 
 
 def test_title_falls_back_for_older_runs(runs_dir: str):
@@ -587,8 +605,8 @@ def test_winner_reason_is_not_printed_twice_in_full(runs_dir: str):
     )
 
     html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
-    table = html[html.index("선택한 기술") : html.index("결정 지점별 비교")]
-    compared = html[html.index("결정 지점별 비교") :]
+    sections = _sections(html)
+    table, compared = sections["picked"], sections["compared"]
 
     # 전문은 표에만 있다
     assert "둘째 문장은 근거다." in table
@@ -607,7 +625,7 @@ def test_judge_verdict_is_visible(runs_dir: str):
 
     html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
 
-    block = html[html.index("결정 지점별 비교") :]
+    block = _sections(html)["compared"]
     assert "재연결·룸을 내장한 실시간 통신 라이브러리" in block  # what_it_is
     assert "재연결·룸을 내장해 요구를 직접 충족" in block  # solves_reason
     assert "재연결 자동" in block  # pros
@@ -633,7 +651,7 @@ def test_stack_table_folds_its_prose(runs_dir: str):
     _seed_basic(runs_dir)
 
     html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
-    table = html[html.index("선택한 기술") : html.index("가장 큰 위험")]
+    table = _sections(html)["picked"]
 
     assert 'style="width: 80%"' in table, "막대가 사라졌다 — 비교가 안 보인다"
     assert '<details class="folded">' in table, "산문이 접히지 않았다"
@@ -654,7 +672,94 @@ def test_next_command_hints_name_real_stages(runs_dir: str):
     _seed_basic(runs_dir)
     html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
 
-    hints = html[html.index("다음 명령어") : html.index("결정 지점별 비교")]
+    hints = _sections(html)["commands"]
     stages = {s.value for s in ShowStage}
     for token in re.findall(r"scout show \S+ (\w+)", hints):
         assert token in stages, f"'{token}'은 scout show가 받지 않는 단계다"
+
+
+# ── 양식: 그룹 · 목차 · 팝오버 (001 v33) ────────────────────────────────
+
+
+def test_sections_are_grouped_by_role(runs_dir: str):
+    """★ 섹션 10개가 결론·전제·근거로 갈린다.
+
+    전부 같은 무게로 나열되면 읽는 사람이 어디까지 읽어야 하는지 알 수 없다.
+    """
+    _seed_basic(runs_dir)
+    _seed_designs(runs_dir)
+
+    html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
+
+    for label in ("결론", "전제", "근거"):
+        assert f'class="group-label">{label}<' in html, f"'{label}' 그룹이 없다"
+
+    # 결론에 권장 설계·선택한 기술, 근거에 수집한 사실이 들어간다
+    conclusion = html[html.index("group-conclusion") : html.index("group-premise")]
+    evidence = html[html.index("group-evidence") :]
+    assert 'id="recommended"' in conclusion and 'id="picked"' in conclusion
+    assert 'id="facts"' in evidence and 'id="compared"' in evidence
+    # v1 대조는 결론이 아니라 전제다 — 결론과 섞이면 무게가 뭉개진다
+    assert 'id="baseline"' not in conclusion
+
+
+def test_toc_anchors_point_at_real_sections(runs_dir: str):
+    """★ 깨진 앵커는 화면에 안 보이는 실패다 — 클릭해도 아무 일이 안 일어난다."""
+    _seed_basic(runs_dir)
+
+    html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
+
+    targets = re.findall(r'<a href="#([\w-]+)"', html)
+    assert targets, "목차가 렌더링되지 않았다"
+    for target in targets:
+        assert f'id="{target}"' in html, f"#{target} 앵커의 대상이 없다"
+
+
+def test_popovers_open_on_focus_not_only_hover(runs_dir: str):
+    """★ 터치 기기에는 호버가 없다 — 포커스로도 열려야 그 설명이 존재하는 것이다."""
+    _seed_basic(runs_dir)
+
+    html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
+
+    assert 'class="hint-body"' in html, "보조 설명 팝오버가 없다"
+    assert ".hint:focus-within > .hint-body" in html
+    assert 'tabindex="0"' in html, "키보드로 닿을 수 없다"
+    # 배지가 뜻을 갖는다 — 모르면 배지가 장식이 된다
+    assert "rubric.py의 공식이 사실에서 계산한 값이다" in html
+
+
+def test_popovers_do_not_widen_the_page_on_narrow_screens(runs_dir: str):
+    """★ absolute 팝오버는 숨겨진 상태로도 폭을 차지한다 — 420px 실측에서 페이지가
+    179px 가로 스크롤됐다. fixed는 scrollWidth에 기여하지 않는다."""
+    _seed_basic(runs_dir)
+
+    html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
+
+    at = html.find("@media (max-width: 640px)")
+    assert at != -1, "좁은 화면용 팝오버 규칙이 없다"
+    block = html[at : html.index("\n  }", at)]
+    assert ".hint-body" in block and "position: fixed" in block, (
+        "좁은 화면에서 팝오버가 absolute로 남으면 리포트가 가로로 스크롤된다"
+    )
+
+
+def test_print_reveals_folded_content(runs_dir: str):
+    """공유가 이 문서의 목적이다 — 인쇄에서 접힌 내용이 사라지면 안 된다."""
+    _seed_basic(runs_dir)
+
+    html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
+
+    assert "@media print" in html
+    assert "details:not([open]) > *:not(summary) { display: block; }" in html
+    assert "nav.toc, .hint-body { display: none; }" in html
+
+
+def test_toc_and_popovers_use_no_javascript(runs_dir: str):
+    """목차·팝오버를 CSS로만 만들었다는 증거 — 자체 완결 단일 파일이어야 한다."""
+    _seed_basic(runs_dir)
+
+    html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
+
+    assert "<script" not in html
+    assert "cdn." not in html
+    assert "onclick" not in html and "onmouseover" not in html
