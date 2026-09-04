@@ -9,7 +9,8 @@
 
 - `tests/test_stale_regression.py` — 아카이브 패키지가 최종 순위에서 탈락하는지
 - `tests/test_necessity_wiring.py` — 걸러낸 결정 지점이 `search`에 안 들어가고
-  보고서에 나타나는지. **축이 둘이다** (`necessity` · `needs_comparison`)
+  보고서에 나타나는지. **축이 셋이다**
+  (`necessity` · `needs_comparison` · `alternatives`)
 - `tests/test_design_no_facts.py` — `design`의 툴 결과가 dossier를 오염시키지 않는지
 - (`test_egress.py` STEP 04 · `test_grounding.py` STEP 06 ·
   `test_search_approval.py` STEP 05 · `test_report.py` STEP 08·11에서 이미 만듦)
@@ -20,8 +21,8 @@
 
 ### 자동
 
-- [ ] `uv run pytest` **6종 + `test_report`** 전부 통과
-- [ ] `test_necessity_wiring.py` — 통과 필터가 **세 축**이다
+- [x] `uv run pytest` **6종 + `test_report`** 전부 통과 — 94개 통과
+- [x] `test_necessity_wiring.py` — 통과 필터가 **세 축**이다
   ```
   1. defer/unnecessary 가 search 입력 목록에 없다
   2. needs_comparison=false 도 search 입력 목록에 없다
@@ -30,18 +31,30 @@
   5. 2·3번이 보고서 "설계에서 이미 정해진 부분"에 렌더링된다
   6. 걸러진 것이 0개면 경고가 출력된다
   ```
-  → 3번은 `tests/test_decision_points.py`가 먼저 검사한다 (v26). 이 STEP에서 흡수하거나
-    그대로 두고 축만 확인한다
-- [ ] `test_design_no_facts.py` — 세 가지를 본다
+  → 3번은 `tests/test_decision_points.py`가 먼저 검사한다 (v26). **흡수하지 않고
+    축만 확인**했다 — 세부(코드가 내리는 경로·왕복·미커버 보기)는 그쪽에 그대로 둔다.
+    여기에는 축 셋이 **각각 혼자서도 막는지**와 priority 컷이 걸러내기보다 **뒤에**
+    오는지를 넣었다. `search_node`가 `state["components"]`만 본다는 소비자 쪽 배선도
+    함께 본다 — 여기서 DB를 다시 읽으면 걸러내기가 예산을 하나도 아끼지 못한다
+- [x] `test_design_no_facts.py` — 세 가지를 본다
   ```
   1. design 이 툴을 불러도 facts 테이블에 행이 생기지 않는다
   2. design 이 부른 npm_package 의 값이 candidates/facts 어디에도 없다
   3. 통과 결정 지점의 search_hints 가 비면 gaps 에 기록된다
   ```
-- [ ] `test_stale_regression.py` — 아카이브 후보가 탈락하고, 탈락 이유에
+  → 툴 대역이 **실제로 호출되는** 실행에서 본다. 툴을 안 부르면 "facts가 비었다"가
+    아무것도 증명하지 않으므로, 같은 payload가 **설계 추출 프롬프트에는 들어가고**
+    dossier에는 안 들어가는 것을 함께 확인한다
+- [x] `test_stale_regression.py` — 아카이브 후보가 탈락하고, 탈락 이유에
       "마지막 릴리스" 사실이 인용된다
-- [ ] `uv run ruff check` 가 `scout/`의 httpx import를 `TID251`로 잡는다 (grep 안 함)
-- [ ] `uv sync --package scout-net-mcp` 가 langchain 없이 성공한다
+  → 이중 안전망(불변식 5)을 **두 경로로 나눠** 본다. 한 시나리오에서 같이 보면 어느
+    쪽이 일했는지 알 수 없어 한쪽이 죽어도 통과한다. 계산 경로는 `rubric.maturity`,
+    판정 경로는 judge의 `solves_it`, 그리고 **judge가 낡은 사실을 무시했을 때**
+    `normalize`의 동점 정렬이 순위를 뒤집는지를 각각 본다
+- [x] `uv run ruff check` 가 `scout/`의 httpx import를 `TID251`로 잡는다 (grep 안 함)
+      — `scout/`에 임시 파일을 넣어 실측: `httpx`·`requests`·`urllib.request` 3건 검출
+- [x] `uv sync --package scout-net-mcp` 가 langchain 없이 성공한다
+      — 설치 후 `uv pip list`에 `scout-net-mcp` 하나뿐 (langchain·langgraph·boto3 없음)
 
 ### E2E — 새 slug로 1회
 
