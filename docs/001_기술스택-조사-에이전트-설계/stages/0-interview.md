@@ -105,12 +105,30 @@ class Interview(BaseModel):
     raw_description: str    # 원래 입력
     refined_brief: str       # ★ 이 단계의 유일한 산출물 — 대화 전체를 반영한 자유 서술
     assumptions: list[str]   # ★ 답하지 않아 LLM이 추정한 항목
+    title: str               # 리포트 제목 — 명사구 한 줄
+    constraints: list[str]   # 제목 아래 한 줄에 늘어놓을 짧은 라벨들
 ```
 
 `scale`·`budget_monthly_usd`·`team_size`·`team_languages`·`deadline_months`·
 `data_sensitivity`·`must_haves`·`non_goals` 같은 슬롯 필드는 없다 — 대화에서 나온 그
 내용은 전부 `refined_brief` 프로즈 안에 자연어로 들어간다. 뒤 단계가 필요한 값은
 `refined_brief`를 읽고 직접 판단한다.
+
+### `title`·`constraints` — 리포트 헤더는 여기서만 만들 수 있다
+
+`report`는 LLM을 쓰지 않으므로(불변식 7) 제목을 거기서 다듬을 수 없다. 그리고
+`refined_brief`(실측 254자)도 `summary`류(331~506자)도 제목으로 쓸 수 없다.
+그래서 **이 단계가 제목을 쓴다.** 여기는 이미 LLM 1회를 부르므로 추가 호출이 0회다.
+
+| 필드 | 규칙 | 실패 예 |
+|---|---|---|
+| `title` | 명사구 한 줄, 40자 이내. 숫자·예산·기간을 넣지 않는다 | `"프롬프트를 개선 하는 agent를 빠르게 만들고 싶어. 일단…"` (원문을 잘라 넣음) |
+| `constraints` | 두세 단어짜리 라벨들 | `"3인 TypeScript 팀이 3개월 내에 출시해야 한다"` (문장이다) |
+
+두 필드 다 **기본값이 있다.** 기존 실행의 `interview_json`에는 이 키가 없고, `report`는
+LLM을 쓰지 않으므로 예전 DB를 그대로 다시 렌더링한다 — 기본값이 없으면 그때 깨진다.
+`title`이 비거나 60자를 넘으면 리포트가 `runs.description`으로 물러난다
+([5-report.md](5-report.md) "화면 구조").
 
 ---
 
@@ -187,6 +205,8 @@ runs (slug, description, created_at, interview_json)
 | 대화형 입력이 불가능한 환경 (파이프·CI) | 대화 즉시 종료 + `assumptions`에 "비대화형 실행" 기록 |
 | 턴 상한(`scout_interview_max_turns`) 도달 | LLM 판단 없이 강제 종료 + `assumptions`에 기록 |
 | `refined_brief`가 원문을 그대로 복사 | 구체화 실패. 프롬프트에 "대화 내용을 문장에 녹여라"를 명시 |
+| `title`에 원문을 잘라 넣기 | 리포트 제목이 다시 질문 문장이 된다. 원문 복사 반례가 `refined_brief`에만 걸려 있으면 이렇게 된다 — 프롬프트에 제목용 반례를 따로 박는다 |
+| `constraints`를 문장으로 쓰기 | 제목 아래 한 줄에 늘어놓는 라벨이다. 문장이면 칩이 화면을 덮는다 |
 | 질문 생성(`ask_question`) 구조화 출력 파싱 실패 | 1회 재시도. 그래도 실패하면 대화를 그냥 끝낸다 — 질문 하나 못 만드는 게 파이프라인을 막으면 안 된다 |
 | 최종 합성(`synthesize`) 구조화 출력 파싱 실패 | `include_raw=True`로 원본 확보 후 1회 재시도 |
 

@@ -192,9 +192,9 @@ def test_search_skips_entirely_when_nothing_passes(runs_dir: str):
 def _rendered_sections(runs_dir: str) -> tuple[str, str, str]:
     """보고서를 세 섹션으로 잘라 돌려준다 — 어느 섹션에 실렸는지가 검사 대상이다."""
     html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
-    closed_at = html.index("이미 정해진 부분")
+    closed_at = html.index("이미 정해진 것")
     deferred_at = html.index("지금 만들지 않아도 되는 것")
-    skipped_at = html.index("이번에 다루지 않은 요소")
+    skipped_at = html.index("이번에 다루지 않은 것")
     return html[closed_at:deferred_at], html[deferred_at:skipped_at], html[skipped_at:]
 
 

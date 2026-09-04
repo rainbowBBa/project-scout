@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<title>{{ description or slug }} — project-scout 리포트</title>
+<title>{{ title }} — project-scout 리포트</title>
 <style>
   :root {
     --bg: #f7f7f5;
@@ -38,14 +38,24 @@
     padding: 2rem 1rem 4rem;
     background: var(--bg);
     color: var(--text);
-    font-family: -apple-system, "Segoe UI", "Noto Sans KR", sans-serif;
-    line-height: 1.55;
+    /* 한글 폰트를 Segoe UI 앞에 둔다 — 뒤에 두면 Segoe가 먼저 잡혀 한글이
+       폰트 폴백(맑은 고딕)으로 떨어진다. 웹폰트는 못 쓴다 (CDN 0 · test_report) */
+    font-family: -apple-system, "Noto Sans KR", "Malgun Gothic", "Segoe UI", sans-serif;
+    line-height: 1.7;
+    /* 한글은 어절 중간에서 끊으면 읽기가 크게 나빠진다. 끊을 곳이 없는 긴 URL·
+       패키지명만 anywhere가 받는다 */
+    word-break: keep-all;
+    overflow-wrap: anywhere;
   }
   main { max-width: 880px; margin: 0 auto; }
   h1 { font-size: 1.6rem; margin: 0 0 0.4rem; }
   h2 { font-size: 1.15rem; margin: 0 0 0.8rem; }
   h3 { font-size: 1rem; margin: 1.2rem 0 0.4rem; }
-  .subtitle { color: var(--muted); margin: 0 0 1.5rem; white-space: pre-wrap; }
+  /* p 규칙이 없으면 브라우저 기본 margin:1em 0 이 걸려 문단 리듬이 뭉갠다 */
+  p { margin: 0 0 0.75rem; }
+  p:last-child { margin-bottom: 0; }
+  /* 제목 아래 제약 한 줄 (5-report.md 화면 목업의 둘째 행) */
+  .meta { margin: 0 0 1.5rem; display: flex; flex-wrap: wrap; gap: 0.3rem; }
   section {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -71,8 +81,10 @@
     white-space: pre-wrap; word-break: break-word; margin: 0;
     font-family: inherit; font-size: 0.95rem; line-height: 1.6;
   }
-  table { width: 100%; border-collapse: collapse; }
+  /* fixed 없이는 웹검색 스니펫(fact.value) 한 줄이 열을 밀어 표가 main 880px를 넘는다 */
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
   th, td { text-align: left; padding: 0.4rem 0.5rem; vertical-align: top; }
+  td { overflow-wrap: anywhere; }
   thead th { color: var(--muted); font-weight: 500; font-size: 0.85rem; border-bottom: 1px solid var(--border); }
   tbody tr + tr td { border-top: 1px solid var(--border); }
   .score-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.2rem 0; }
@@ -112,7 +124,12 @@
   ul.plain { margin: 0.2rem 0; padding-left: 1.2rem; }
   details { margin-top: 0.5rem; }
   summary { cursor: pointer; font-weight: 600; }
+  /* fact_id는 `npm.last_release` 꼴이라 끊기면 못 읽는다. table-layout:fixed가
+     열 너비를 잡아주므로 nowrap이 더는 표를 밀지 않는다 */
   .fact-row td:first-child { font-family: ui-monospace, monospace; font-size: 0.85rem; white-space: nowrap; }
+  /* 둘째 출현부터 접는다 — 같은 563자를 두 번 읽지 않게 (5-report.md) */
+  .folded > summary { font-weight: 400; color: var(--muted); font-size: 0.9rem; }
+  .folded > summary::marker { color: var(--muted); }
   .cited { color: var(--accent); }
   footer { color: var(--muted); font-size: 0.8rem; text-align: center; margin-top: 2rem; }
 </style>
@@ -126,16 +143,22 @@
     {% if entry and entry.score is not none %}
       <div class="bar-track"><div class="bar-fill" style="width: {{ entry.score * 20 }}%"></div></div>
       <span class="score-num">{{ entry.score }}</span>
-      <span class="badge badge-{{ entry.source }}">{{ entry.source }}</span>
+      <span class="badge badge-{{ entry.source }}">{{ entry.source | source_label }}</span>
     {% else %}
       <span class="badge badge-unavailable">근거 없음</span>
     {% endif %}
   </div>
-  {% if entry and entry.reason %}<p class="score-reason">{{ entry.reason }}</p>{% endif %}
+  {% if entry and entry.reason %}<div class="score-reason">{{ entry.reason | sentences }}</div>{% endif %}
 {% endmacro %}
 
-<h1>{{ description or slug }}</h1>
-{% if refined_brief %}<p class="subtitle">{{ refined_brief }}</p>{% endif %}
+{# 제목 + 제약 한 줄 (5-report.md 화면 목업). refined_brief 전문은 헤더가 아니라
+   "결정 요약"의 구체화된 명세 자리에 있다 — 254자 문단이 제목 밑에 오면 벽이 된다. #}
+<h1>{{ title }}</h1>
+{% if constraints %}
+<p class="meta">
+  {% for c in constraints %}<span class="badge">{{ c }}</span>{% endfor %}
+</p>
+{% endif %}
 
 {% if incomplete %}
 <div class="banner">⚠ 파이프라인이 끝까지 실행되지 않았습니다 — 아래는 지금까지 저장된 결과입니다.</div>
@@ -146,14 +169,15 @@
 <section class="final-design">
   <h2>★ 권장 설계</h2>
   {% if final_design %}
-  <p class="lead">{{ final_design.summary }}</p>
+  {# sentences 필터가 <p>를 만든다 — 여기서 또 감싸면 중첩 <p>가 되어 무효 HTML이다 #}
+  <div class="lead">{{ final_design.summary | sentences }}</div>
 
   <h3>구조</h3>
   <pre class="prose">{{ final_design.shape }}</pre>
   <h3>데이터 흐름</h3>
   <pre class="prose">{{ final_design.data_flow }}</pre>
 
-  <h3>설계가 어떻게 바뀌었나</h3>
+  <h3>조사로 바뀐 것</h3>
   {% if final_design.changes_from_design %}
   <ul class="plain">{% for c in final_design.changes_from_design %}<li>{{ c }}</li>{% endfor %}</ul>
   {% else %}
@@ -162,30 +186,30 @@
   {% endif %}
 
   <h3>왜 이 조합인가</h3>
-  <p>{{ final_design.stack_rationale }}</p>
+  {{ final_design.stack_rationale | sentences }}
 
-  <h3>무엇부터</h3>
+  <h3>구축 순서</h3>
   {% if final_design.build_order %}
   <ol class="plain">{% for s in final_design.build_order %}<li>{{ s }}</li>{% endfor %}</ol>
   {% else %}
   <p class="empty">해당 없음 — 구축 순서가 산출되지 않았습니다.</p>
   {% endif %}
 
-  <h3>붙이는 지점 · 주의</h3>
+  <h3>연동 지점</h3>
   {% if final_design.integration_notes %}
   <ul class="plain">{% for n in final_design.integration_notes %}<li>{{ n }}</li>{% endfor %}</ul>
   {% else %}
-  <p class="empty">해당 없음 — 조합에서 특별히 붙일 지점이 지적되지 않았습니다.</p>
+  <p class="empty">해당 없음 — 조합에서 특별히 이을 지점이 지적되지 않았습니다.</p>
   {% endif %}
 
-  <h3>조합 고유 위험</h3>
+  <h3>조합 위험</h3>
   {% if final_design.combination_risks %}
   <ul class="plain">{% for r in final_design.combination_risks %}<li>{{ r }}</li>{% endfor %}</ul>
   {% else %}
-  <p class="empty">해당 없음 — 조합해서 생기는 위험이 지적되지 않았습니다. 개별 후보의 단점은 "요소별 비교"에 있습니다.</p>
+  <p class="empty">해당 없음 — 조합해서 생기는 위험이 지적되지 않았습니다. 개별 후보의 단점은 "결정 지점별 비교"에 있습니다.</p>
   {% endif %}
 
-  <h3>미해결</h3>
+  <h3>미해결 항목</h3>
   {% if final_design.unresolved %}
   <ul class="plain">{% for u in final_design.unresolved %}<li>{{ u }}</li>{% endfor %}</ul>
   {% else %}
@@ -193,18 +217,18 @@
   {% endif %}
   {% else %}
   {# 행이 없어도 섹션을 지우지 않는다 — 왜 없는지가 정보다 (불변식 12) #}
-  <p class="empty">설계 확정이 실패했거나 아직 실행되지 않았습니다 — 아래 "그 외 gaps"에서 이유를 확인하세요.</p>
+  <p class="empty">설계 확정이 실패했거나 아직 실행되지 않았습니다 — 아래 "그 외 미확인"에서 이유를 확인하세요.</p>
   {% endif %}
 </section>
 
 {# v1 대조 — 조사 전 기본틀. 차이를 문장으로 만들지 않고 같은 이름의 필드를
    나란히 놓기만 한다. 무엇이 왜 바뀌었는지는 위의 changes_from_design이 말한다. #}
 <details>
-  <summary>설계 개요 — 조사 전 기본틀 (v1 대조)</summary>
+  <summary>기본 설계 (조사 전) — v1 대조</summary>
   {% if architecture %}
-  <p>{{ architecture.summary }}</p>
+  {{ architecture.summary | sentences }}
   <table>
-    <thead><tr><th></th><th>기본틀 (조사 전)</th><th>확정 (조사 후)</th></tr></thead>
+    <thead><tr><th></th><th>기본 설계</th><th>권장 설계</th></tr></thead>
     <tbody>
       <tr>
         <td><strong>구조</strong></td>
@@ -230,33 +254,35 @@
 </details>
 
 <section>
-  <h2>확정 스택</h2>
+  <h2>선택한 기술</h2>
   {% if no_winner %}
-  <div class="banner">⚠ 통과 후보가 없는 요소 {{ no_winner|length }}개: {{ no_winner|join(', ') }} — 아래 "요소별 비교"에서 탈락 사유를 확인하세요.</div>
+  <div class="banner">⚠ 통과 후보가 없는 결정 지점 {{ no_winner|length }}개: {{ no_winner|join(', ') }} — 아래 "결정 지점별 비교"에서 탈락 사유를 확인하세요.</div>
   {% endif %}
   {% if stack %}
+  {# 선정 이유의 **전문은 여기에만** 둔다. 아래 "결정 지점별 비교"는 첫 문장만 보이고
+     접는다 — 같은 563자를 두 번 읽게 하지 않는다 (5-report.md). #}
   <table>
-    <thead><tr><th>요소</th><th>고른 것</th><th>overall</th><th>선정 이유</th></tr></thead>
+    <thead><tr><th>결정 지점</th><th>고른 것</th><th>종합</th><th>선정 이유</th></tr></thead>
     <tbody>
     {% for row in stack %}
       <tr>
         <td>{{ row.component }}</td>
         <td>{{ row.candidate }}{% if row.margin == "close" %} <span class="badge badge-close">근접</span>{% endif %}</td>
-        <td style="min-width:160px">{{ score_bar(row.overall, "overall") }}</td>
-        <td>{{ row.winner_reason }}</td>
+        <td style="min-width:160px">{{ score_bar(row.overall, "종합") }}</td>
+        <td>{{ row.winner_reason | sentences }}</td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
   {% else %}
-  <p class="empty">해당 없음 — 통과한 요소가 아직 없습니다.</p>
+  <p class="empty">해당 없음 — 통과한 결정 지점이 아직 없습니다.</p>
   {% endif %}
 
-  <h3>최대 리스크</h3>
+  <h3>가장 큰 위험</h3>
   {% if risks %}
   <ul class="plain">{% for r in risks %}<li>{{ r }}</li>{% endfor %}</ul>
   {% else %}
-  <p class="empty">해당 없음 — 확정 후보에 남은 단점·유의사항이 없습니다.</p>
+  <p class="empty">해당 없음 — 고른 후보에 남은 단점·유의사항이 없습니다.</p>
   {% endif %}
 
   <h3>명시된 가정</h3>
@@ -265,12 +291,21 @@
   {% else %}
   <p class="empty">해당 없음 — 사용자가 모든 질문에 응답해 기본값을 쓰지 않았습니다.</p>
   {% endif %}
+
+  {# 구체화된 명세 — 정본이 이 자리로 규정한다 (5-report.md). 헤더에 두면 254자
+     문단이 제목 바로 밑에 벽으로 선다. 문장 단위로 끊어 싣는다. #}
+  <h3>구체화된 명세</h3>
+  {% if refined_brief %}
+  {{ refined_brief | sentences }}
+  {% else %}
+  <p class="empty">해당 없음 — interview가 명세를 만들지 못했습니다.</p>
+  {% endif %}
 </section>
 
 {# 4번 — 권장 설계가 깔고 있는 전제. "필요 없어서"(아래 5번)와 다른 섹션이다:
    조사를 안 한 것과 조사할 필요가 없다고 판단한 것은 다르다 (불변식 17). #}
 <section>
-  <h2>🔒 설계에서 이미 정해진 부분</h2>
+  <h2>🔒 이미 정해진 것</h2>
   {% if closed %}
   <ul class="plain">
     {% for c in closed %}
@@ -296,7 +331,7 @@
 </section>
 
 <section>
-  <h2>이번에 다루지 않은 요소</h2>
+  <h2>이번에 다루지 않은 것</h2>
   {% if skipped %}
   <ul class="plain">
     {% for c in skipped %}
@@ -327,7 +362,7 @@
 </details>
 
 <section>
-  <h2>요소별 비교</h2>
+  <h2>결정 지점별 비교</h2>
   {% if elements %}
   {% for el in elements %}
   <h3>{{ el.component.name }}</h3>
@@ -337,39 +372,61 @@
       {{ "✔" if c.rank == 1 else ("✘" if c.rank is none else "·") }} {{ c.name }}
     </span>
     {% if c.kind %}<span class="badge">{{ c.kind }}</span>{% endif %}
-    {% if c.grounding_violations %}<span class="badge badge-violation">grounding 위반 {{ c.grounding_violations }}건</span>{% endif %}
+    {% if c.grounding_violations %}<span class="badge badge-violation">근거 위반 {{ c.grounding_violations }}건</span>{% endif %}
+
+    {# 후보가 무엇이고 judge가 왜 통과시켰는지 — 지금까지 컨텍스트에만 있고 화면에
+       없었다. 점수만 보이면 "무엇을 고른 건지"를 알 수 없다. #}
+    {% if c.what_it_is %}<p class="score-reason">{{ c.what_it_is }}</p>{% endif %}
 
     {% if c.rank is none %}
-      <p class="quote">탈락 — {{ c.rejected_reason }}</p>
+      {# 전문은 아래 "탈락 사유"에 있다 — 여기서는 첫 문장만 보이고 접는다 #}
+      <details class="folded">
+        <summary>탈락 — {{ c.rejected_reason | summary_line }}</summary>
+        {{ c.rejected_reason | sentences }}
+      </details>
     {% else %}
-      {{ score_bar(c.overall, "overall") }}
+      {{ score_bar(c.overall, "종합") }}
       {% if c.rank == 1 %}
-        <p class="quote"><strong>1위</strong> {{ c.winner_reason }}</p>
+        {# 전문은 위 "선택한 기술" 표에 있다 #}
+        <details class="folded">
+          <summary><strong>1위</strong> {{ c.winner_reason | summary_line }}</summary>
+          {{ c.winner_reason | sentences }}
+        </details>
       {% elif c.runner_up_note %}
-        <p class="quote">{{ c.runner_up_note }}</p>
+        <div class="quote">{{ c.runner_up_note | sentences }}</div>
       {% endif %}
-      {{ score_bar(c.maturity, "maturity") }}
-      {{ score_bar(c.risk, "risk") }}
+      {% if c.verdict and c.verdict.solves_reason %}
+      <details class="folded">
+        <summary>해결함 — {{ c.verdict.solves_reason | summary_line }}</summary>
+        {{ c.verdict.solves_reason | sentences }}
+      </details>
+      {% endif %}
+      {% if c.verdict and c.verdict.pros %}
+      <ul class="plain">{% for p in c.verdict.pros %}<li>{{ p }}</li>{% endfor %}</ul>
+      {% endif %}
+      {{ score_bar(c.maturity, "성숙도") }}
+      {{ score_bar(c.risk, "위험") }}
       {% if c.dossier_gaps %}
-      <p class="score-reason">gaps: {{ c.dossier_gaps|join('; ') }}</p>
+      <p class="score-reason">미확인:</p>
+      <ul class="plain">{% for g in c.dossier_gaps %}<li>{{ g }}</li>{% endfor %}</ul>
       {% endif %}
     {% endif %}
   </div>
   {% endfor %}
   {% endfor %}
   {% else %}
-  <p class="empty">해당 없음 — 아직 평가된 요소가 없습니다.</p>
+  <p class="empty">해당 없음 — 아직 평가된 결정 지점이 없습니다.</p>
   {% endif %}
 </section>
 
 <details>
-  <summary>탈락 사유 전체</summary>
+  <summary>탈락 사유</summary>
   {% if rejections %}
   <table>
-    <thead><tr><th>요소</th><th>후보</th><th>탈락 사유</th></tr></thead>
+    <thead><tr><th>결정 지점</th><th>후보</th><th>탈락 사유</th></tr></thead>
     <tbody>
     {% for r in rejections %}
-      <tr><td>{{ r.component }}</td><td>{{ r.candidate }}</td><td>{{ r.reason }}</td></tr>
+      <tr><td>{{ r.component }}</td><td>{{ r.candidate }}</td><td>{{ r.reason | sentences }}</td></tr>
     {% endfor %}
     </tbody>
   </table>
@@ -379,24 +436,24 @@
 </details>
 
 <details>
-  <summary>근거 목록</summary>
+  <summary>수집한 사실</summary>
   {% if facts_by_candidate %}
   {% for group in facts_by_candidate %}
   <h3>
     {{ group.candidate }} ({{ group.component }}{% if group.kind %} · {{ group.kind }}{% endif %})
-    {% if group.verdict and group.verdict.confidence == "low" %}<span class="badge badge-low">confidence: low</span>{% endif %}
-    {% if group.grounding_violations %}<span class="badge badge-violation">grounding 위반 {{ group.grounding_violations }}건</span>{% endif %}
+    {% if group.verdict and group.verdict.confidence == "low" %}<span class="badge badge-low">신뢰도 낮음</span>{% endif %}
+    {% if group.grounding_violations %}<span class="badge badge-violation">근거 위반 {{ group.grounding_violations }}건</span>{% endif %}
   </h3>
   {% if group.facts %}
   <table>
-    <thead><tr><th>fact_id</th><th>label</th><th>value</th><th>url</th><th>조회일</th></tr></thead>
+    <thead><tr><th>사실 id</th><th>항목</th><th>값</th><th>출처</th><th>조회일</th></tr></thead>
     <tbody>
     {% for row in group.facts %}
       <tr class="fact-row">
         <td class="{{ 'cited' if row.cited else '' }}">{{ row.fact.id }}{% if row.cited %} ✓{% endif %}</td>
         <td>{{ row.fact.label }}</td>
         <td>{{ row.fact.value }}</td>
-        <td>{% if row.fact.url %}<a href="{{ row.fact.url }}">link</a>{% endif %}</td>
+        <td>{% if row.fact.url %}<a href="{{ row.fact.url }}">열기</a>{% endif %}</td>
         <td>{{ row.fact.retrieved_at }}</td>
       </tr>
     {% endfor %}
@@ -406,7 +463,8 @@
   <p class="empty">해당 없음 — 조회된 사실이 없습니다.</p>
   {% endif %}
   {% if group.dossier_gaps %}
-  <p class="score-reason">gaps: {{ group.dossier_gaps|join('; ') }}</p>
+  <p class="score-reason">미확인:</p>
+  <ul class="plain">{% for g in group.dossier_gaps %}<li>{{ g }}</li>{% endfor %}</ul>
   {% endif %}
   {% endfor %}
   {% else %}
@@ -414,7 +472,7 @@
   {% endif %}
 
   {% if other_gaps %}
-  <h3>그 외 gaps</h3>
+  <h3>그 외 미확인</h3>
   <ul class="plain">
     {% for g in other_gaps %}<li><strong>{{ g.candidate }}</strong>: {{ g.note }}</li>{% endfor %}
   </ul>

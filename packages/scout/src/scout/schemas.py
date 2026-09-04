@@ -32,6 +32,11 @@ class Interview(BaseModel):
     raw_description: str
     refined_brief: str
     assumptions: StrList
+    # 리포트 제목과 그 아래 제약 한 줄 (5-report.md 화면 목업의 첫 두 행).
+    # ★ 기본값이 있어야 한다 — 기존 실행의 interview_json에는 이 키가 없고,
+    # report는 LLM을 쓰지 않으므로(불변식 7) 예전 DB를 그대로 다시 렌더링한다.
+    title: str = ""
+    constraints: StrList = Field(default_factory=list)
 
 
 class InterviewTurn(BaseModel):

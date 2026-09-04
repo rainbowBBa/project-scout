@@ -17,7 +17,11 @@ from scout.schemas import (
     Interview,
     Verdict,
 )
-from scout.stages.report import build_report_context, render_report
+from scout.stages.report import (
+    build_report_context,
+    render_report,
+    split_sentences,
+)
 
 SLUG = "test-run"
 
@@ -370,8 +374,8 @@ def test_final_design_is_rendered_at_the_top(runs_dir: str):
     assert "룸 이름과 채널 ID를 같은 값으로 쓴다" in html
     assert "단일 프로세스 전제가 깨지면" in html
     assert "인증: priority가 밀려" in html
-    # 권장 설계가 확정 스택보다 먼저 나온다
-    assert html.index("권장 설계") < html.index("확정 스택")
+    # 권장 설계가 고른 결과보다 먼저 나온다 — 최상단이 권장 설계라는 계약 (STEP 11)
+    assert html.index("권장 설계") < html.index("선택한 기술")
 
 
 def test_v1_is_kept_for_contrast(runs_dir: str):
@@ -453,3 +457,164 @@ def test_report_uses_no_llm(runs_dir: str):
 
     assert "invoke" not in source
     assert "make_llm" not in source
+
+
+# ── 가독성 — 제목 · 문장 끊기 · 중복 접기 (001 v30) ─────────────────────
+
+# 실측된 실패: judge가 쓴 문장이 한 문단 630자였고, 저장된 값에 줄바꿈이 하나도 없어서
+# 화면이 글자 벽이 됐다. 아래 셋이 그 상태로 돌아가는 것을 막는다.
+
+
+def test_sentences_splits_korean_prose():
+    """★ 문장 경계에서만 끊는다 — 문장을 고치거나 줄이지 않는다."""
+    text = "첫 문장이다. 둘째 문장이다. 셋째 문장이다."
+
+    assert split_sentences(text) == ["첫 문장이다.", "둘째 문장이다.", "셋째 문장이다."]
+
+
+def test_sentences_does_not_break_versions_or_money():
+    """버전·금액에서 끊기면 사실이 두 조각으로 갈린다."""
+    text = "pypi.latest_version 4.17.11로 확인됐다. 월 예산은 $200.00이다."
+
+    parts = split_sentences(text)
+
+    assert len(parts) == 2, parts
+    assert "4.17.11" in parts[0]
+    assert "$200.00" in parts[1]
+
+
+def test_sentences_honors_newlines_if_the_model_supplies_them():
+    """지금 LLM은 줄바꿈을 안 주지만, 오면 문단 경계로 존중한다."""
+    assert split_sentences("위쪽\n\n아래쪽") == ["위쪽", "아래쪽"]
+
+
+def test_long_prose_is_rendered_as_paragraphs(runs_dir: str):
+    """★ 630자 한 문단이 화면에서 문단으로 끊긴다.
+
+    `<p>` 개수를 세는 것이 검사 대상이다 — 문자열이 남아 있는지만 보면 통째로 찍혀도
+    통과한다.
+    """
+    _seed_basic(runs_dir)
+    _seed_designs(runs_dir)
+    final = store.get_final_design(SLUG, runs_dir=runs_dir)
+    store.upsert_final_design(
+        SLUG,
+        final.model_copy(
+            update={
+                "stack_rationale": "첫 근거다. 둘째 근거다. 셋째 근거다. 넷째 근거다."
+            }
+        ),
+        runs_dir=runs_dir,
+    )
+
+    html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
+
+    block = html[html.index("왜 이 조합인가") : html.index("구축 순서")]
+    assert block.count("<p>") == 4, "긴 산문이 한 덩어리로 찍혔다"
+    assert "넷째 근거다." in block, "문장이 사라졌다 — 끊기만 해야 한다"
+
+
+def test_title_comes_from_interview_not_the_raw_question(runs_dir: str):
+    """★ 제목은 사용자가 타이핑한 질문이 아니다 (불변식 7 — interview가 쓴다)."""
+    _seed_basic(runs_dir)
+    run = store.get_run(SLUG, runs_dir=runs_dir)
+    interview = Interview.model_validate(run["interview"]).model_copy(
+        update={
+            "title": "사내 AI 요약 팀 채팅 앱",
+            "constraints": ["사내 200명", "3인 TypeScript", "월 $200"],
+        }
+    )
+    store.upsert_run(
+        SLUG, run["description"], run["created_at"], interview, runs_dir=runs_dir
+    )
+
+    ctx = build_report_context(SLUG, runs_dir=runs_dir)
+    html = render_report(ctx)
+
+    assert ctx["title"] == "사내 AI 요약 팀 채팅 앱"
+    assert html.index("사내 AI 요약 팀 채팅 앱") < html.index("권장 설계")
+    for chip in ("사내 200명", "3인 TypeScript", "월 $200"):
+        assert chip in html
+    # refined_brief 전문은 제목 밑이 아니라 본문에 있다
+    assert html.index("구체화된 명세") > html.index("권장 설계")
+
+
+def test_title_falls_back_for_older_runs(runs_dir: str):
+    """예전 실행의 interview_json에는 title이 없다 — report는 LLM 없이 다시 렌더링된다."""
+    _seed_basic(runs_dir)
+
+    ctx = build_report_context(SLUG, runs_dir=runs_dir)
+
+    assert ctx["title"] == "사내 200명 팀 채팅 앱"  # description으로 물러났다
+    assert ctx["constraints"] == []
+
+
+def test_overlong_title_falls_back(runs_dir: str):
+    """모델이 제목 자리에 문단을 넣으면 h1이 세 줄이 된다 — 그때는 원문이 낫다."""
+    _seed_basic(runs_dir)
+    run = store.get_run(SLUG, runs_dir=runs_dir)
+    interview = Interview.model_validate(run["interview"]).model_copy(
+        update={"title": "가" * 61}
+    )
+    store.upsert_run(
+        SLUG, run["description"], run["created_at"], interview, runs_dir=runs_dir
+    )
+
+    assert build_report_context(SLUG, runs_dir=runs_dir)["title"] == run["description"]
+
+
+def test_winner_reason_is_not_printed_twice_in_full(runs_dir: str):
+    """★ 같은 문장을 두 번 읽지 않는다 — 둘째 출현은 첫 문장만 보이고 접힌다.
+
+    실측에서 563자 `winner_reason`이 "선택한 기술" 표와 "결정 지점별 비교"에 각각
+    전문으로 찍혀 체감 분량이 2배였다.
+    """
+    _seed_basic(runs_dir)
+    store.clear_picks(SLUG, "실시간 메시지 전달", runs_dir=runs_dir)
+    store.add_pick(
+        SLUG,
+        "실시간 메시지 전달",
+        "socket.io",
+        rank=1,
+        winner_reason="첫 문장은 결론이다. 둘째 문장은 근거다.",
+        runner_up_note="ws도 합리적 선택지다",
+        margin="close",
+        runs_dir=runs_dir,
+    )
+
+    html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
+    table = html[html.index("선택한 기술") : html.index("결정 지점별 비교")]
+    compared = html[html.index("결정 지점별 비교") :]
+
+    # 전문은 표에만 있다
+    assert "둘째 문장은 근거다." in table
+    # 비교 섹션은 첫 문장만 펼쳐 보인다 — 나머지는 <summary> 뒤(접힌 본문)에 있다
+    summary = compared[
+        compared.index("<summary><strong>1위</strong>") : compared.index("</summary>")
+    ]
+    assert "첫 문장은 결론이다." in summary
+    assert "둘째 문장은 근거다." not in summary, "접히지 않고 전문이 두 번 찍혔다"
+    assert "둘째 문장은 근거다." in compared, "접었다고 지우면 안 된다 (불변식 12)"
+
+
+def test_judge_verdict_is_visible(runs_dir: str):
+    """점수만 보이면 무엇을 고른 건지 알 수 없다 — 컨텍스트엔 있었는데 화면에 없었다."""
+    _seed_basic(runs_dir)
+
+    html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
+
+    block = html[html.index("결정 지점별 비교") :]
+    assert "재연결·룸을 내장한 실시간 통신 라이브러리" in block  # what_it_is
+    assert "재연결·룸을 내장해 요구를 직접 충족" in block  # solves_reason
+    assert "재연결 자동" in block  # pros
+
+
+def test_screen_labels_are_korean(runs_dir: str):
+    """화면에 보이는 라벨에 영어를 남기지 않는다 (CSS 클래스명은 그대로다)."""
+    _seed_basic(runs_dir)
+
+    html = render_report(build_report_context(SLUG, runs_dir=runs_dir))
+
+    assert ">계산<" in html and ">판정<" in html
+    for leftover in ("gaps:", ">link<", "confidence:", "<th>fact_id</th>"):
+        assert leftover not in html, f"화면에 영어가 남았다: {leftover}"
