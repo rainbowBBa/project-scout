@@ -103,7 +103,8 @@ Day 3 — analyze → design 재설계 (001 CHANGELOG v20~v22)
 [~] STEP 12  검증        테스트 6종 전부 존재 · pytest 94개 통과 · 격리 두 겹 실측
                           (TID251 3건 검출 · MCP 단독 sync에 langchain 0) ·
                           E2E 완주와 육안 확인만 미실행
-[ ] STEP 13  선택        여유 있으면 osv · --from 실제 건너뛰기
+[~] STEP 13  선택        osv_query 되돌림 완료 (001 v28) · 재판정 루프는 STEP 06에서
+                          이미 끝나 있었다 · method 후보 · --from · 풀 규모가 남았다
 
 [~] = 배선은 E2E로 확인됐고 **판단 품질만** 남았다 — 아래 참고
 ```
@@ -112,8 +113,13 @@ Day 3 — analyze → design 재설계 (001 CHANGELOG v20~v22)
 
 E2E는 완주한다(`report.html`까지). 남은 것은 **작은 모델로는 확인할 수 없는 항목**이다.
 
-지금 `SCOUT_MODEL_ID`가 Bedrock 일일 토큰 쿼터 때문에 임시로 Haiku이고, 정본은
-Sonnet이다. 거기서 실측된 흔들림이 셋인데 성격이 다르다.
+아래 흔들림 셋은 쿼터 때문에 임시로 Haiku를 쓰던 동안 실측된 것이다. 성격이 다르다.
+
+> **모델은 `us.anthropic.claude-sonnet-4-6`으로 돌아왔다.** `doctor`로 실측한 결과
+> `anthropic.claude-sonnet-5`는 쿼터가 아니라 **이 계정에 entitlement가 없고**
+> (`AccessDeniedException`), `anthropic.claude-sonnet-4-6`은 on-demand가 안 돼
+> 크로스리전 프로파일(`us.` 접두사)이 필요하다. `config.py`의 기본값은 아직
+> `anthropic.claude-sonnet-5`라 이 계정에서는 `.env`가 있어야 돈다.
 
 | 증상 | 성격 | 처리 |
 |---|---|---|

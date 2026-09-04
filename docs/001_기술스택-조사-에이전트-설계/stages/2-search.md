@@ -119,11 +119,19 @@ id는 `<출처>.<항목>` 규칙으로 만든다.
 | kind | 예 | 수집 경로 |
 |---|---|---|
 | `library` | socket.io, langchain | `npm_package`/`pypi_package` + `github_repo_health` + `osv_query` + `web_search` |
+| ↳ 순서 | | `osv_query`는 **레지스트리 뒤에** 온다 — 버전을 알아야 물을 수 있다 |
 | `software` | PostgreSQL, Redis, Meilisearch | `github_repo_health` + `web_search` (+ 있으면 레지스트리) |
 | `method` | 이벤트 소싱, CQRS, PG LISTEN/NOTIFY | `web_search`만 |
 
 **`method`는 조회할 레지스트리가 없다.** 이건 결함이 아니라 사실이고, `dossier_gaps`에
 명시적으로 드러나야 한다. judge가 "근거가 웹 스니펫 3건뿐"이라는 걸 알고 판단해야 한다.
+
+**취약점은 버전을 특정해서만 묻는다.** `osv_query`가 표에서 `npm_package`/`pypi_package`
+뒤에 오는 것은 순서가 아니라 **의존**이다 — 레지스트리에서 읽은 `latest_version`이 없으면
+조회 자체를 하지 않고 `gaps`에 남긴다. 버전 없는 조회는 이미 고쳐진 과거 취약점까지
+세어 오래 유지된 패키지를 위험해 보이게 한다 ([04-아키텍처](../04-아키텍처.md)
+`osv_query` 항목). 안 묻는 쪽이 틀린 숫자보다 낫고, 그때 `risk`는 "osv 미조회 — 취약점
+항목 제외" 경로로 간다.
 
 ### `dossier_gaps`를 반드시 채운다
 
@@ -292,7 +300,8 @@ gaps       (slug, candidate, note)
 ## 절단 시
 
 **절단선 1번** — `osv_query`를 뺀다. `osv.*` 사실이 사라지고 `risk` 근거가 줄지만
-`npm.license`, `gh.archived`는 남는다.
+`npm.license`, `gh.archived`는 남는다. (**되돌렸다** —
+[06-범위와일정](../06-범위와일정.md) 절단선 1번.)
 
 **절단선 2번** — `method` kind 후보를 아예 만들지 않는다. `library`·`software`만 올린다.
 후보 수가 8~10 → 6~8로 줄어 `verify` 시간도 함께 준다.

@@ -79,6 +79,13 @@ _GH_FIELDS = (
     ("gh.stars", "스타", "stars"),
     ("gh.issue_close_rate", "이슈 처리율", "issue_resolution_rate"),
 )
+# 0건은 사실이므로 `osv.vulns`가 "0"으로 남아야 한다 — rubric이 그걸 5점으로 읽는다.
+# 등급·ID는 0건이면 provider가 빈 값으로 주고, 빈 값은 사실이 되지 않는다.
+_OSV_FIELDS = (
+    ("osv.vulns", "알려진 취약점", "vulns"),
+    ("osv.max_severity", "최고 심각도", "max_severity"),
+    ("osv.ids", "취약점 ID", "ids"),
+)
 
 
 def _fields_to_facts(payload: dict, spec, url: str | None, now: str) -> list[Fact]:
@@ -130,6 +137,8 @@ def _registry_facts(call: ToolCall, now: str) -> list[Fact]:
             or f"{call.args.get('owner')}/{call.args.get('repo')}"
         )
         return _fields_to_facts(payload, _GH_FIELDS, f"https://github.com/{full}", now)
+    if call.name == "osv_query":
+        return _fields_to_facts(payload, _OSV_FIELDS, payload.get("url"), now)
     return []
 
 
@@ -142,7 +151,7 @@ def call_matches(call: ToolCall, candidate_name: str) -> bool:
     target = _norm(candidate_name)
     if not target:
         return False
-    if call.name in ("npm_package", "pypi_package"):
+    if call.name in ("npm_package", "pypi_package", "osv_query"):
         return _norm(str(call.args.get("name", ""))) == target
     if call.name == "github_repo_health":
         owner = _norm(str(call.args.get("owner", "")))
@@ -195,6 +204,38 @@ async def _call_tool(
         return None, f"{name} 조회 실패: {e}"
 
 
+# 레지스트리 접두사 → OSV ecosystem 표기. 버전을 어디서 읽었는지가 곧 생태계다.
+_OSV_ECOSYSTEMS = (("npm", "npm"), ("pypi", "PyPI"))
+
+
+async def _topup_vulns(
+    draft_name: str,
+    facts: Sequence[Fact],
+    tools: dict[str, BaseTool],
+    now: str,
+) -> tuple[list[Fact], list[str]]:
+    """레지스트리에서 읽은 버전으로 취약점을 조회한다.
+
+    버전을 못 찾으면 **조회하지 않는다.** 버전 없이 물으면 이미 고쳐진 과거 취약점까지
+    세어 성숙한 패키지가 위험해 보이고, 그 숫자가 `rubric.risk`를 그대로 깎는다.
+    조회하지 않으면 risk는 "osv 미조회 — 취약점 항목 제외" 경로로 가서 근거 없이
+    후해지지도 않는다 (rubric.risk 참고).
+    """
+    values = {f.id: f.value for f in facts}
+    for prefix, ecosystem in _OSV_ECOSYSTEMS:
+        version = values.get(f"{prefix}.latest_version")
+        if not version:
+            continue
+        args = {"name": draft_name, "ecosystem": ecosystem, "version": version}
+        payload, error = await _call_tool(tools, "osv_query", args)
+        if payload:
+            return _registry_facts(ToolCall("osv_query", args, payload, ""), now), []
+        return [], [error] if error else []
+    return [], [
+        f"'{draft_name}' 버전을 특정하지 못해 취약점 미조회 — risk에서 취약점 항목이 빠진다"
+    ]
+
+
 async def topup_dossier(
     draft_name: str,
     kind: str,
@@ -225,6 +266,15 @@ async def topup_dossier(
                 gaps.append(error)
         if not has("npm.") and not has("pypi."):
             gaps.append(f"레지스트리에서 '{draft_name}'을 찾지 못함")
+
+    # 레지스트리 사실을 채운 **뒤에** 온다 — 취약점은 버전을 특정해야 물을 수 있고,
+    # 그 버전이 방금 읽은 latest_version이다 (providers/osv.py "버전을 반드시 함께").
+    if kind == "library" and not has("osv."):
+        extra_osv, osv_gaps = await _topup_vulns(
+            draft_name, [*facts, *extra], tools, now
+        )
+        extra.extend(extra_osv)
+        gaps.extend(osv_gaps)
 
     if kind in ("library", "software") and not has("gh."):
         gaps.append("GitHub 저장소 미확인 — owner/repo를 특정하지 못함")

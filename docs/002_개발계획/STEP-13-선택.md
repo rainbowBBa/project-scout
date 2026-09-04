@@ -7,21 +7,40 @@
 
 ## 되돌리는 순서
 
-| 순위 | 항목 | 얻는 것 |
-|---|---|---|
-| 1 | `osv_query` provider | `risk` 점수에 취약점 근거가 붙는다 |
-| 2 | `method` kind 후보 | 아키텍처·개발방법도 후보로 판정된다 |
-| 3 | grounding 재판정 루프 | 위반 시 다시 물어본다 (검출만 → 교정까지) |
-| 4 | `--from` 실제 건너뛰기 | 프롬프트만 고쳐서 한 단계를 다시 돌릴 수 있다 |
-| 5 | `--max-components 8` 로 풀 규모 1회 | 비교의 값이 실제로 올라가는지 확인 |
+| 순위 | 항목 | 얻는 것 | 상태 |
+|---|---|---|---|
+| 1 | `osv_query` provider | `risk` 점수에 취약점 근거가 붙는다 | **끝** |
+| 2 | `method` kind 후보 | 아키텍처·개발방법도 후보로 판정된다 | |
+| 3 | grounding 재판정 루프 | 위반 시 다시 물어본다 (검출만 → 교정까지) | **STEP 06에서 이미 끝났다** |
+| 4 | `--from` 실제 건너뛰기 | 프롬프트만 고쳐서 한 단계를 다시 돌릴 수 있다 | |
+| 5 | `--max-components 8` 로 풀 규모 1회 | 비교의 값이 실제로 올라가는지 확인 | |
+
+3번은 이 STEP을 쓸 때 미완으로 적었지만 `verify`가 이미 위반 목록을 붙여 1회 재판정하고,
+`test_grounding`의 `test_violation_triggers_one_reground`가 그 배선을 검사한다.
 
 ## 완료 기준 (착수한 것만)
 
-- [ ] `osv_query` — `osv.vulns`·`osv.max_severity` 가 dossier에 들어간다
+- [x] `osv_query` — `osv.vulns`·`osv.max_severity` 가 dossier에 들어간다
+  - 단독 호출 실측: `lodash@4.17.11` → 7건 · CRITICAL · GHSA 5개 /
+    `socket.io@4.8.1` → 0건 / `django@3.2.0`(PyPI) → 63건
+  - MCP 경유 실측: 툴 6종에 `osv_query` 등록됨, `topup_dossier`가 레지스트리 버전으로 조회
+  - `rubric.risk`가 실제로 그 사실을 쓴다 (7건+CRITICAL → 1, 0건 → 5, 미조회 → 항목 제외)
+  - `tests/test_osv_topup.py` 17개
 - [ ] `method` 후보 — `gaps`에 "레지스트리 없음"이 기록되고 `confidence`가 `low`로 나온다
-- [ ] grounding 재판정 — 위반 목록을 프롬프트에 넣어 1회 다시 묻는다
+- [x] grounding 재판정 — 위반 목록을 프롬프트에 넣어 1회 다시 묻는다 (STEP 06)
 - [ ] `--from` — 지정한 단계 앞의 노드를 실제로 건너뛰고, 그 단계는 **다시 돈다**
 - [ ] 풀 규모 — 후보 30~40개, judge 30~40회가 쿼터 안에서 돈다
+
+### `osv_query`에서 실제로 걸린 것 — 버전 없는 조회
+
+설계 문서의 툴 표는 `osv_query(ecosystem, name)`이었다. 버전이 없다. 그대로 만들었더니
+OSV가 **그 패키지에 한 번이라도 영향을 준** 취약점을 전부 돌려줬다 — `django@3.2.0`이
+63건이다. 이 숫자가 `rubric.risk`로 들어가면 오래 유지된 패키지가 예외 없이 감점되어
+**성숙도가 위험으로 뒤집힌다.**
+
+그래서 `version`을 필수 인자로 만들고, `search`의 top-up이 레지스트리에서 방금 읽은
+`latest_version`을 넘긴다. 버전을 못 찾으면 **조회하지 않고** `gaps`에 남긴다 —
+안 묻는 쪽이 틀린 숫자보다 낫고, 그때 `risk`는 기존의 "osv 미조회" 경로로 간다.
 
 ## 4번이 새로 들어온 이유
 

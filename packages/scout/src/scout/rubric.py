@@ -152,8 +152,9 @@ def maturity(
 def risk(facts: Sequence[Fact]) -> tuple[int | None, str]:
     """높을수록 안전한 1~5. 취약점 → 라이선스 순으로 감점하고 1~5로 클램프한다.
 
-    osv.*는 절단선 1번이라 STEP 10까지 dossier에 없다. 없으면 취약점 항목을 건너뛴다 —
-    "조회하지 않았다"를 "0건이다"로 대접하면 risk가 근거 없이 후해진다.
+    osv.*가 없으면 취약점 항목을 건너뛴다 — "조회하지 않았다"를 "0건이다"로 대접하면
+    risk가 근거 없이 후해진다. 취약점은 버전을 특정해서만 묻기 때문에(search._topup_vulns)
+    레지스트리에서 버전을 못 찾은 후보는 지금도 이 경로로 온다.
     """
     values = _by_id(facts)
 
