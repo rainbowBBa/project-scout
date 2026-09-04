@@ -97,7 +97,10 @@ def _env(summary_chars: int = DEFAULT_SUMMARY_CHARS) -> jinja2.Environment:
         lstrip_blocks=True,
     )
     env.filters["sentences"] = _sentences
-    env.filters["summary_line"] = lambda text: _summary_line(text, summary_chars)
+    # 표 셀은 본문보다 좁다 — 호출부가 상한을 좁힐 수 있어야 한다
+    env.filters["summary_line"] = lambda text, chars=None: _summary_line(
+        text, chars or summary_chars
+    )
     env.filters["source_label"] = lambda source: _SOURCE_LABELS.get(source, source)
     return env
 

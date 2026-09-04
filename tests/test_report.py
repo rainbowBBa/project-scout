@@ -662,6 +662,28 @@ def test_stack_table_folds_its_prose(runs_dir: str):
     assert "제약상 재연결 내장이 중요" in table
 
 
+def test_stack_table_gives_the_reason_column_room(runs_dir: str):
+    """★ `table-layout: fixed`의 기본은 균등 분할이다 — 4열이면 이유가 25%다.
+
+    실측(회사 API 챗봇 실행)에서 이유 열이 200px이라 요약 한 줄이 8줄로 감기고 행이
+    200px가 됐다. 산문을 접었는데도 표가 다시 커진 것이다. 열 폭을 몰아주고 표 안의
+    요약 상한을 본문보다 좁게 잡아 2줄에 맞춘다.
+    """
+    _seed_basic(runs_dir)
+
+    table = _sections(render_report(build_report_context(SLUG, runs_dir=runs_dir)))["picked"]
+
+    assert "<colgroup>" in table, "열 폭이 균등 분할이면 이유 열이 25%가 된다"
+    # 마지막 col은 폭을 주지 않아 남는 폭을 전부 받는다 — 앞 세 열의 합이 100% 미만
+    widths = [int(w) for w in re.findall(r'<col style="width:(\d+)%"', table)]
+    assert len(widths) == 3 and sum(widths) < 65, (
+        f"이유 열에 남는 폭이 35% 미만이다: {widths}"
+    )
+    assert "min-width:150px" not in table, (
+        "고정 레이아웃에서 셀 min-width는 colgroup과 싸운다"
+    )
+
+
 def test_next_command_hints_name_real_stages(runs_dir: str):
     """리포트가 찍는 명령은 붙여넣으면 돌아가야 한다 (001/09-출력양식.md).
 

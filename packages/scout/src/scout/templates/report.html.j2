@@ -357,16 +357,18 @@
   {% if stack %}
   {# 막대는 남기고 산문은 접는다 — 비교가 한눈에 보이는 것이 이 표의 목적이다 #}
   <table>
+    {# table-layout:fixed는 기본이 균등 분할이다 — 이유 열이 25%면 요약이 8줄로 감긴다 #}
+    <colgroup><col style="width:22%"><col style="width:20%"><col style="width:17%"><col></colgroup>
     <thead><tr><th>결정 지점</th><th>고른 것</th><th>종합</th><th>이유</th></tr></thead>
     <tbody>
     {% for row in stack %}
       <tr>
         <td>{{ row.component }}</td>
         <td>{{ row.candidate }}{% if row.margin == "close" %} {{ hint("근접", "1위와 2위의 종합 점수 차이가 작다. 2위도 합리적 선택지라는 뜻이다.", "badge-close") }}{% endif %}</td>
-        <td style="min-width:150px">{{ score_bar(row.overall, "", reason=false) }}</td>
+        <td>{{ score_bar(row.overall, "", reason=false) }}</td>
         <td>
           <details class="folded">
-            <summary>{{ row.winner_reason | summary_line }}</summary>
+            <summary>{{ row.winner_reason | summary_line(46) }}</summary>
             {{ row.winner_reason | sentences }}
             {% if row.overall and row.overall.reason %}
             <p class="score-reason">점수 근거</p>
