@@ -1,7 +1,6 @@
 """scout-net MCP 서버 — project-scout의 유일한 인터넷 출구 (04-아키텍처.md).
 
-scout(앱)을 import하지 않는다 — 워크스페이스 경계 (05-프로젝트관리.md).
-프로토타입은 stdio 전송만 쓴다.
+`scout`를 import하지 않는다 (불변식 1). 전송은 stdio만 쓴다.
 """
 
 from mcp.server.fastmcp import FastMCP

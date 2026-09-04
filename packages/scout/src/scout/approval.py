@@ -1,12 +1,9 @@
-"""웹검색 사람 승인 게이트 — `design`과 `search`가 공유한다.
+"""웹검색 사람 승인 게이트 — `design`과 `search`가 공유한다 (001/04-아키텍처.md).
 
-`scout_net_mcp`가 아니라 앱 쪽에 있다 (001/04-아키텍처.md "앱측 승인 게이트").
 allowlist가 *어디로* 나가는지를 막는다면 이 게이트는 *무엇이* 나가는지를 막는다.
 
-단계별 모듈이 아니라 여기 있는 이유는 stage → stage import를 만들지 않기 위해서다.
-게이트 **인스턴스**는 단계마다 새로 만든다 — `design_node`와 `search_node`가 각각
-`asyncio.run()`으로 이벤트 루프를 새로 열기 때문에 `SearchGate._lock`을 공유하면
-락이 다른 루프에 묶인다.
+게이트 인스턴스는 단계마다 새로 만든다 — 단계별로 `asyncio.run()`이 루프를 새로 열어
+`_lock`을 공유하면 락이 다른 루프에 묶인다.
 """
 
 from __future__ import annotations
@@ -24,17 +21,12 @@ from scout.progress import step, while_asking
 if TYPE_CHECKING:
     from langchain_core.tools import BaseTool
 
-# 기본값이자 테스트의 기준선. 프로덕션은 Settings 값을 인자로 넘긴다 — 모듈 상수를
-# 직접 읽으면 개발자 로컬 `.env`가 테스트 결과를 바꾸고, `.env`는 커밋되지 않아
-# 재현도 안 된다 (불변식 10).
+# 인자 기본값이다. 프로덕션은 Settings 값을 넘긴다 — 함수가 모듈 상수를 직접 읽으면
+# 로컬 `.env`가 테스트 결과를 바꾼다
 DEFAULT_MAX_REJECTIONS = 3
-
-# 승인되는 웹검색 상한. 없으면 에이전트가 한 요소에 15번씩 검색해 사람에게 승인
-# 프롬프트를 그만큼 띄운다 (실측). `search`는 요소당 이 값을 쓰고, `design`은 실행
-# 전체에 3회를 쓴다 — 설계는 요소별로 펼치지 않고 한 번 돌기 때문이다.
 DEFAULT_WEB_SEARCH_BUDGET = 5
 
-# 열 2의 `? ` — 사람에게 묻는 줄 (001/09-출력양식.md). `: `는 typer가 붙인다.
+# `: `는 typer가 붙인다
 APPROVAL_NOTICE = '  ? 인터넷 검색 "{query}" — 허용할까요?'
 
 
@@ -52,11 +44,10 @@ class NonInteractive(Exception):
 
 
 def default_approve(query: str) -> Approval:
-    """묻는 동안 화면을 독점한다 — `while_asking()`이 병렬 요소의 진행 줄을 붙잡는다.
+    """묻는 동안 `while_asking()`이 병렬 요소의 진행 줄을 붙잡는다.
 
-    이 함수가 `search`에서 `asyncio.to_thread` 워커로 도는 동안 이벤트 루프는 계속
-    돌기 때문에(`SearchGate.check` 참고), 창이 없으면 다른 요소의 `·` 줄이 질문을
-    화면 위로 밀어낸다. 승인과 거부 사유가 **한 창 안**에 들어간다.
+    이 함수는 워커 스레드에서 돌고 이벤트 루프는 계속 도므로, 창이 없으면 다른 요소의
+    진행 줄이 질문을 화면 위로 밀어낸다.
     """
     with while_asking():
         try:
@@ -70,9 +61,6 @@ def default_approve(query: str) -> Approval:
 
 def auto_approve(query: str) -> Approval:
     """`--auto-approve-search` 전용. 질문이 아니므로 `·` 진행 줄이다.
-
-    무엇이 나갔는지는 그대로 찍는다 — 승인을 건너뛴다고 내용을 감추면 게이트의
-    의미가 준다.
 
     `while_asking()`을 쓰지 않는다 — 답할 사람이 없으니 화면을 독점할 근거가 없다.
     """
@@ -110,14 +98,11 @@ class SearchGate:
             if self.blocked:
                 return Approval(False, "이 실행에서는 웹검색을 쓸 수 없습니다")
             try:
-                # 프롬프트를 스레드로 넘긴다 — 이벤트 루프를 막으면 다른 요소의
-                # in-flight HTTP가 응답을 못 읽고 타임아웃에 걸린다. 그래서 루프가 계속
-                # 도는 동안의 **화면 독점**은 여기가 아니라 `default_approve`의
-                # `while_asking()`이 맡는다 (001/09-출력양식.md).
+                # 스레드로 넘긴다 — 이벤트 루프를 막으면 다른 요소의 in-flight
+                # 요청이 타임아웃된다. 화면 독점은 `default_approve`가 맡는다.
                 #
-                # ★ 이 락이 프롬프트 **내내** 잡혀 있어야 한다. 두 번째 요소의 check()가
-                # 여기서 막혀 질문을 아예 시작하지 못하는 것이 곧 "질문은 한 번에
-                # 하나"의 근거다 — 임계구역을 좁히면 두 질문이 화면에서 겹친다.
+                # 이 락은 프롬프트 내내 잡혀 있어야 한다 — 임계구역을 좁히면
+                # 두 요소의 질문이 화면에서 겹친다
                 approval = await asyncio.to_thread(self.approve, query)
             except NonInteractive:
                 self.blocked = True
@@ -138,15 +123,12 @@ class SearchGate:
 def wrap_web_search(
     tool: BaseTool, gate: SearchGate, *, budget: int = DEFAULT_WEB_SEARCH_BUDGET
 ) -> StructuredTool:
-    """`web_search`를 승인 게이트로 감싼다. 거부되면 원본을 호출하지 않는다 — egress 0.
+    """`web_search`를 승인 게이트로 감싼다. 거부되면 원본을 호출하지 않는다 (불변식 14).
 
-    `budget`은 승인된 검색 횟수 상한이다. 거부는 예산을 쓰지 않는다 — 거부 반복은
-    `SearchGate.rejections`가 따로 막는다.
+    거부는 예산을 쓰지 않는다 — 거부 반복은 `rejections`가 따로 막는다.
 
-    `args_schema`는 MCP가 준 raw JSON Schema dict 그대로 물려준다. 원본은
-    `response_format="content_and_artifact"`라 2-튜플을 돌려주지만, 여기서는
-    `ainvoke`로 content만 받아 문자열 하나로 통일한다 — 거부 시엔 사유 문자열을
-    같은 자리에 돌려줘야 하기 때문이다.
+    원본은 `response_format="content_and_artifact"`라 2-튜플을 돌려주지만 `ainvoke`로
+    content만 받아 문자열로 통일한다 — 거부 시 사유 문자열을 같은 자리에 돌려준다.
     """
     remaining = budget
 

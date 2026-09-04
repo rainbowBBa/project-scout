@@ -1,10 +1,7 @@
 """ReAct 에이전트 기록을 코드가 읽는 장치 — `design`과 `search`가 공유한다.
 
-두 단계 다 `create_agent`로 툴을 부르게 하고, **결과는 LLM 문장이 아니라
-`ToolMessage` 원본에서 코드가 뽑는다.** `search`는 그 값으로 dossier를 만들고
-(불변식 13), `design`은 설계 어휘만 얻고 **`facts`에는 넣지 않는다**(불변식 15).
-
-단계별 모듈이 아니라 여기 있는 이유는 stage → stage import를 만들지 않기 위해서다.
+결과는 LLM 문장이 아니라 `ToolMessage` 원본에서 코드가 뽑는다 (불변식 13).
+`design`은 그 값을 `facts`에 넣지 않는다 (불변식 15).
 """
 
 from __future__ import annotations
@@ -27,14 +24,11 @@ DEFAULT_TOOL_PAYLOAD_CHARS = 1200
 async def run_agent_loop(agent, task: str, limit: int) -> tuple[list, bool]:
     """툴 루프를 돌리고 (메시지, 한도에 걸렸는지)를 돌려준다.
 
-    `ainvoke`가 아니라 `astream`을 쓰는 이유는 **한도 초과가 예외이기 때문**이다 —
-    `GraphRecursionError`는 상태를 담아주지 않아서 `ainvoke`로 받으면 그때까지 모은
-    툴 기록이 함께 날아간다. 한도를 낮춘 만큼 걸릴 일이 실제로 생기고, 그때 부분
-    기록만으로도 결과를 뽑는 게 아무것도 없이 죽는 것보다 낫다 (불변식 11).
+    `ainvoke`가 아니라 `astream`인 이유: `GraphRecursionError`는 상태를 담아주지 않아
+    `ainvoke`로 받으면 그때까지 모은 툴 기록이 함께 날아간다 (불변식 11).
 
-    `limit`은 **툴 호출 수가 아니라 superstep 수**다. ReAct는 한 바퀴가 model + tools
-    두 스텝이라 10이면 툴 호출 4~5회쯤이다. `create_agent`는 그래프에 9999를 바인딩해
-    두므로 호출할 때마다 반드시 넘긴다.
+    `limit`은 툴 호출 수가 아니라 superstep 수다. `create_agent`가 그래프에 9999를
+    바인딩해두므로 호출할 때마다 넘긴다.
     """
     messages: list = []
     try:
@@ -60,8 +54,8 @@ class ToolCall:
 def message_text(message: Any) -> str:
     """`.text`는 langchain-core 1.x에서 메서드 → 프로퍼티로 바뀌었다.
 
-    호환 기간이라 프로퍼티가 **호출도 되는** 문자열을 돌려준다 — `callable()`을 먼저
-    보면 구형 경로로 빠져 deprecation 경고가 뜬다. 문자열 판정을 앞에 둔다.
+    호환 기간이라 프로퍼티가 호출도 되는 문자열을 돌려준다 — `callable()`을 먼저 보면
+    구형 경로로 빠져 deprecation 경고가 뜬다. 문자열 판정을 앞에 둔다.
     """
     text = getattr(message, "text", None)
     if isinstance(text, str):
@@ -122,8 +116,8 @@ def build_transcript(
 ) -> str:
     """에이전트 히스토리를 평문으로 접는다.
 
-    원본 메시지를 그대로 다음 프롬프트에 넣으면 tool_use/tool_result 쌍이 새 toolConfig와
-    맞지 않아 Bedrock이 거부할 수 있다. 평문이면 그 문제가 없고 토큰도 준다.
+    원본 메시지를 그대로 넣으면 tool_use/tool_result 쌍이 새 toolConfig와 맞지 않아
+    Bedrock이 거부할 수 있다.
     """
     lines = []
     for call in calls:

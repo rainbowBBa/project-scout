@@ -1,10 +1,7 @@
-"""interview 단계 — 대화형으로 되물어 막연한 요청을 구체화해 Interview를 만들고
-runs에 저장한다.
+"""interview 단계 — 되물어 요청을 구체화하고 Interview를 만든다 (001/stages/0-interview.md).
 
-질문 개수·내용은 코드가 정하지 않는다. LLM이 매 턴 "질문 하나 더" 또는 "충분함"을
-판단한다 (000_기술스택-조사-에이전트-설계/stages/0-interview.md). 이 대화 루프는
-파이썬 for-loop가 아니라 작은 LangGraph 서브그래프로 짠다 — 순환은 조건 엣지로
-표현한다:
+질문 개수·내용은 코드가 정하지 않는다 — LLM이 매 턴 판단한다. 그 대화 루프를 작은
+LangGraph 서브그래프로 짠다:
 
     START → ask_question ─(질문 있음)→ get_answer ─(계속)→ ask_question (반복)
                 │                                     │
@@ -13,8 +10,7 @@ runs에 저장한다.
                                       │
                                      END
 
-외부 파이프라인(scout/graph.py)에서 보이는 "interview" 노드는 하나 그대로다 —
-그 노드가 내부적으로 이 서브그래프를 돈다.
+바깥 파이프라인에서 보이는 "interview" 노드는 하나 그대로다.
 """
 
 from __future__ import annotations
@@ -46,8 +42,7 @@ if TYPE_CHECKING:
 
 Ask = Callable[[str], str]
 
-# Settings.scout_interview_max_turns 의 기본값과 같아야 한다 — 복사본이지만
-# run_interview를 직접 부르는 테스트가 있어 인자 기본값이 필요하다.
+# 인자 기본값. Settings.scout_interview_max_turns 와 같아야 한다
 _DEFAULT_MAX_TURNS = 5
 
 
@@ -56,13 +51,10 @@ class NonInteractive(Exception):
 
 
 def _default_ask(question: str) -> str:
-    # stdin을 읽는 함수는 `while_asking()` 안에서 읽는다 (001/09-출력양식.md).
-    # `interview`는 병렬이 아니라 지금은 보류할 줄이 없지만, 규칙을 한 군데만 지키면
-    # 다음 사람이 "왜 여기만?"에서 판단을 다시 하게 된다.
+    # stdin을 읽는 함수는 `while_asking()` 안에서 읽는다 (001/09-출력양식.md)
     with while_asking():
         try:
-            # 열 2의 `? ` — 화자를 밝히지 않는다. `?`가 "당신이 답할 차례"를 말하고
-            # 들여쓰기가 [인터뷰] 소속을 말한다 (001/09-출력양식.md).
+            # 화자를 밝히지 않는다 — `?`가 차례를, 들여쓰기가 소속을 말한다
             return typer.prompt(f"  ? {question}", default="", show_default=False)
         except EOFError, typer.Abort:
             raise NonInteractive from None
@@ -112,7 +104,7 @@ def _synthesize_interview(
     if interview is None:
         raise RuntimeError(f"Interview 구조화 출력 파싱 실패: {raw}")
 
-    # 코드 쪽 안전망 — judge가 gap_notes를 놓쳐도 미응답 사실 자체는 항상 남는다.
+    # 코드 쪽 안전망 — LLM이 gap_notes를 놓쳐도 미응답 사실은 남는다
     merged_assumptions = list(dict.fromkeys([*interview.assumptions, *gap_notes]))
     return interview.model_copy(update={"assumptions": merged_assumptions})
 

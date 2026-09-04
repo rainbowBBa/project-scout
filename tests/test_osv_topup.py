@@ -1,16 +1,10 @@
 """취약점 조회 배선을 검사한다 — 네트워크를 쓰지 않는다 (툴 대역).
 
-검증하는 주장: **취약점은 버전을 특정해서만 묻는다.**
+검증하는 주장: **취약점은 버전을 특정해서만 묻는다.** 버전 없이 물으면 이미 고쳐진
+과거 취약점까지 세어 성숙한 패키지가 `rubric.risk`에서 감점된다. 버전을 못 찾으면
+조회하지 않고 `gaps`에 남긴다 — 안 묻는 쪽이 틀린 숫자보다 낫다.
 
-버전 없이 OSV에 물으면 그 패키지에 **한 번이라도** 영향을 준 취약점이 전부 온다.
-실측에서 `django@3.2.0`이 63건이었고, 버전을 빼면 성숙한 패키지가 예외 없이
-"취약점 수십 건"이 되어 `rubric.risk`가 그만큼 깎인다 — **성숙도가 위험으로 뒤집힌다.**
-그래서 `_topup_vulns`는 레지스트리에서 읽은 `latest_version`을 넘기고, 버전을 못 찾으면
-**조회하지 않고** `gaps`에 남긴다. 안 묻는 쪽이 틀린 숫자보다 낫다는 판단이고,
-그때 risk는 "osv 미조회 — 취약점 항목 제외" 경로로 간다.
-
-0건도 사실이다 — `osv.vulns`가 "0"으로 남아야 `rubric.risk`가 5점을 준다.
-빈 값과 0을 같이 취급하면 취약점 없는 패키지가 "미조회"로 떨어진다.
+0건도 사실이다 — `osv.vulns`가 "0"으로 남아야 risk가 5점을 줄 근거가 있다.
 """
 
 import asyncio
@@ -67,7 +61,7 @@ def _topup(facts: list[Fact], spy: _SpyOsv, name: str = "lodash"):
 
 
 def test_registry_version_is_what_gets_asked():
-    """★ 방금 읽은 latest_version을 그대로 넘긴다 — 그게 "지금 설치될 버전"이다."""
+    """방금 읽은 latest_version을 그대로 넘긴다 — 그게 지금 설치될 버전이다."""
     spy = _SpyOsv()
 
     _topup([_fact("npm.latest_version", "4.17.21")], spy)
@@ -100,11 +94,7 @@ def test_npm_wins_when_both_registries_have_a_version():
 
 
 def test_no_version_means_no_query(monkeypatch):
-    """★ 버전이 없으면 묻지 않는다 — 틀린 숫자보다 없는 게 낫다.
-
-    실측: 버전 없는 조회는 `django`에서 63건을 돌려줬다. 그 숫자가 risk를 깎으면
-    "오래 유지된 패키지일수록 위험하다"가 되어 판단이 거꾸로 선다.
-    """
+    """버전이 없으면 묻지 않는다 — 틀린 숫자보다 없는 게 낫다."""
     spy = _SpyOsv()
 
     facts, gaps = _topup([_fact("gh.stars", "50000")], spy)
@@ -131,7 +121,7 @@ def test_lookup_failure_becomes_a_gap():
 
 
 def test_zero_vulns_is_a_fact():
-    """★ 0건도 사실이다 — 없으면 `rubric.risk`가 5점을 줄 근거가 없어진다."""
+    """0건도 사실이다 — 없으면 `rubric.risk`가 5점을 줄 근거가 없다."""
     facts, gaps = _topup([_fact("npm.latest_version", "4.17.21")], _SpyOsv(_payload(0)))
 
     by_id = {f.id: f.value for f in facts}
@@ -212,7 +202,7 @@ def test_existing_osv_facts_are_not_re_queried():
 
 
 def test_risk_uses_the_vuln_facts():
-    """★ 절단선을 되돌린 값어치 — risk가 "미조회"가 아니라 근거를 갖는다."""
+    """risk가 "미조회"가 아니라 근거를 갖는다."""
     dossier = [
         _fact("npm.license", "MIT"),
         _fact("npm.latest_version", "4.17.11"),
@@ -259,11 +249,7 @@ def test_highest_severity_wins():
 
 
 def test_cvss_vector_is_not_guessed_into_a_grade():
-    """★ CVSS 벡터는 파싱하지 않는다 — 모르는 것을 추측해 채우면 risk가 흔들린다.
-
-    등급이 없으면 `max_severity`가 None이고 사실이 되지 않는다. 그때 risk는 건수만
-    보고 판단하며, 그게 정직한 상태다.
-    """
+    """CVSS 벡터는 파싱하지 않는다 — 등급이 없으면 사실이 되지 않고 건수만 쓴다."""
     vulns = [{"severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L"}]}]
 
     assert osv_provider._max_severity(vulns) is None

@@ -124,8 +124,8 @@ async def _verify_candidate(
 ) -> Verdict:
     """판정 → 저장 → grounding 대조 → (위반이면) 재판정 → 2차 위반이면 강등.
 
-    LLM 호출만 스레드로 뺀다. store 접근을 이벤트 루프 스레드에 남겨두면 후보를
-    병렬로 돌려도 sqlite 쓰기가 저절로 직렬화된다.
+    LLM 호출만 스레드로 뺀다 — store 접근을 루프 스레드에 남기면 병렬 판정 중에도
+    sqlite 쓰기가 저절로 직렬화된다.
     """
     violations: list[str] | None = None
     recorded_violations = 0

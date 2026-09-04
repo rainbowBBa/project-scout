@@ -1,14 +1,9 @@
 """결정 지점의 입도를 검사한다 — LLM도 네트워크도 쓰지 않는다.
 
 검증하는 주장: **고를 보기가 없는 결정 지점은 조사로 넘어가지 않고, 조용히 사라지지도
-않는다.**
+않는다** (불변식 18).
 
-실측에서 세 형태로 깨졌다 (CHANGELOG v26) — "어떻게 구성할 것인가"처럼 선택이 아닌
-질문이 통과해 억지 후보가 1위로 올라왔고, 브리프가 지정한 `lang chain`이 자기 비교에서
-1위가 됐고, `"SSE vs WebSocket"`을 물어놓고 SSE도 WebSocket도 후보에 없었다.
-
-프롬프트 반례만으로는 못 막는다 — 지시 준수가 약한 모델에서도 유지돼야 하므로 코드가
-강제한다. 그 배선을 여기서 고정한다.
+프롬프트 반례만으로는 못 막아서 코드가 강제한다. 그 배선을 고정한다.
 """
 
 from pathlib import Path
@@ -49,7 +44,7 @@ def _component(
 
 
 def test_one_alternative_does_not_pass_to_search():
-    """★ 고를 보기가 하나면 결정 지점이 아니다 — 실측에서 억지 후보가 1위로 올라왔다."""
+    """고를 보기가 하나면 결정 지점이 아니다 — 억지 후보가 1위로 올라온다."""
     components = [
         _component("스트리밍", alternatives=["SSE", "WebSocket"]),
         _component("에이전트 라이브러리", alternatives=["LangChain"]),
@@ -93,11 +88,7 @@ def test_closing_is_idempotent():
 
 
 def test_closed_decision_appears_in_the_report(runs_dir: str):
-    """★ 조용히 사라지지 않는다 — 보고서에 이유와 함께 실린다 (불변식 12).
-
-    필터가 늘면 버려지는 요소가 생기는데, 그게 보고서에 안 보이면 사용자는 설계가
-    무엇을 전제로 깔았는지 알 수 없다.
-    """
+    """조용히 사라지지 않는다 — 보고서에 이유와 함께 실린다 (불변식 12)."""
     components = [_component("에이전트 라이브러리", alternatives=["LangChain"])]
     close_undecidable(components)
     store.upsert_components(SLUG, components, runs_dir=runs_dir)
@@ -141,7 +132,7 @@ def _candidate(name: str, what_it_is: str = "설명") -> Candidate:
 
 
 def test_uncovered_alternative_is_recorded():
-    """★ 실측된 실패 — "Next.js vs Vite+React"인데 Next.js가 후보에 없었고 아무 기록도 없었다."""
+    """대안이 후보에 하나도 안 걸리면 기록으로 남는다."""
     component = _component("프론트엔드", alternatives=["Next.js", "Vite + React"])
 
     notes = uncovered_alternatives(component, [_candidate("vite")])

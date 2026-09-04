@@ -1,17 +1,12 @@
-"""design 단계 — 구현 설계를 세우고 비교가 필요한 결정 지점을 뽑는다.
+"""design 단계 — 구현 설계를 세우고 비교가 필요한 결정 지점을 뽑는다 (001/stages/1-design.md).
 
-`search`와 같은 2-pass다 (001/stages/1-design.md):
-1. ReAct 에이전트가 툴을 부르며 설계를 세운다 — 후보 이름·패턴명·생태계 어휘를 확인
-2. 코드가 접은 기록(`build_transcript`)에서 `Design`을 구조화 출력으로 뽑는다
+`search`와 같은 2-pass다: 에이전트가 툴로 탐색하고, 코드가 접은 기록에서 `Design`을
+구조화 출력으로 뽑는다.
 
-★ **이 단계의 툴 결과는 `facts`에 들어가지 않는다** (불변식 15). dossier는 `search`만
-만든다. 설계 중에 스쳐본 값을 섞으면 kind 라우팅·top-up을 거치지 않은 사실이 judge의
-인용 대상이 되어, grounding은 통과하는데 후보마다 근거 커버리지가 달라진다.
-그래서 여기서는 `store.upsert_facts`를 부르지 않는다 — `test_design_no_facts`가 검사한다.
+★ 이 단계의 툴 결과는 `facts`에 들어가지 않는다 (불변식 15) — `store.upsert_facts`를
+부르지 않는다. `test_design_no_facts`가 검사한다.
 
-걸러진 것까지 전부 저장하되, 다음 단계로는 **비교가 필요하고**(`needs_comparison`)
-`necessity`가 essential/valuable이고 **고를 보기가 2개 이상**(`alternatives`)인 것 중
-priority 상위 max_components개만 넘긴다 ("도출과 통과를 분리한다").
+걸러진 것까지 전부 저장하되 다음 단계로는 통과 필터 셋을 지난 것만 넘긴다.
 """
 
 from __future__ import annotations
@@ -50,7 +45,6 @@ if TYPE_CHECKING:
     from scout.state import ScoutState
 
 _PASSING_NECESSITY = {"essential", "valuable"}
-# 결정 지점은 "무엇을 고를 것인가"다. 보기가 이만큼 없으면 고를 것이 없다 (불변식 18)
 DEFAULT_MIN_ALTERNATIVES = 2
 
 
@@ -71,12 +65,11 @@ async def run_design(
     payload_chars: int = DEFAULT_TOOL_PAYLOAD_CHARS,
 ) -> tuple[Design, bool]:
     # checkpointer=False — 안 주면 바깥 그래프의 SqliteSaver(동기 전용)를 물려받는데
-    # 이 에이전트는 astream으로 돈다 ("SqliteSaver does not support async methods").
+    # 이 에이전트는 astream으로 돈다
     agent = create_agent(
         llm,
         list(tools.values()),
-        # 예산 숫자를 문장에 굳히지 않는다 — 설정을 내렸는데 프롬프트가 3회라고
-        # 말하면 에이전트는 3회 있다고 믿고 2회째에 예산 소진 응답을 받는다.
+        # 예산을 주입한다 — 굳혀두면 설정을 내렸을 때 프롬프트가 거짓이 된다
         system_prompt=DESIGN_AGENT_SYSTEM_PROMPT.format(
             web_search_budget=web_search_budget
         ),
@@ -111,15 +104,10 @@ async def run_design(
 def close_undecidable(
     components: list[Component], *, min_alternatives: int = DEFAULT_MIN_ALTERNATIVES
 ) -> list[Component]:
-    """고를 보기가 없는 결정 지점을 **코드가** 닫힌 결정으로 내린다 (불변식 18).
+    """고를 보기가 없는 결정 지점을 코드가 닫힌 결정으로 내린다 (불변식 18).
 
-    프롬프트에 반례를 박아도 모델이 `needs_comparison=true`로 주는 것을 막지 못한다 —
-    실측에서 "…를 어떻게 구성할 것인가"(선택이 아닌 질문)가 통과해 `search`가 억지
-    후보를 만들었고, 질문에 답하지 않는 후보가 1위로 올라왔다 (CHANGELOG v26).
-
-    조용히 버리지 않는다 — 여기서 채운 `no_comparison_reason`이 보고서의 "설계에서
-    이미 정해진 부분"에 실려 **왜 비교하지 않았는지가 보인다** (불변식 12).
-    반환값은 내려진 것들 — 호출자가 `gaps`에 남긴다.
+    프롬프트 반례로는 못 막아서 코드가 내린다. `no_comparison_reason`을 채우므로
+    보고서에 이유가 남는다 (불변식 12). 반환값은 내려진 것들 — 호출자가 `gaps`에 남긴다.
     """
     closed: list[Component] = []
     for c in components:
@@ -142,14 +130,14 @@ def select_passing_components(
     *,
     min_alternatives: int = DEFAULT_MIN_ALTERNATIVES,
 ) -> list[Component]:
-    """search로 넘길 상위 결정 지점만 고른다 — 필터가 **셋**이다.
+    """search로 넘길 상위 결정 지점만 고른다 — 필터가 셋이다.
 
-    `necessity`가 essential/valuable이고 **비교가 필요하고**(`needs_comparison`)
-    **고를 보기가 2개 이상**인 것 중 priority가 낮은(=중요한) 순. 걸러진 것도
-    components 테이블에는 전부 남는다 — 여기서 자르는 건 상태로 넘기는 부분집합일 뿐이다.
+    `necessity` · `needs_comparison` · `alternatives` 개수. priority가 낮은(=중요한) 순.
+    걸러진 것도 `components` 테이블에는 전부 남는다 — 여기서 자르는 건 상태로 넘기는
+    부분집합이다.
 
-    세 번째 축은 `close_undecidable`이 이미 내렸으므로 보통 중복이지만, 그 호출을
-    빼먹거나 저장된 결정 지점을 `--from search`로 다시 읽을 때 마지막 방어가 된다.
+    셋째 축은 `close_undecidable`과 중복이지만, 저장된 결정 지점을 다시 읽을 때
+    마지막 방어가 된다.
     """
     passing = [
         c
@@ -190,8 +178,8 @@ def _record_gaps(
             f"'{component.name}': {component.no_comparison_reason} "
             f"(정할 것: {component.decision_question})",
         )
-    # 힌트가 비면 search가 한국어 추상어로 npm_search를 부르게 된다 (불변식 16).
-    # 파이프라인은 그래도 돌기 때문에 조용히 회귀하지 않도록 기록으로 남긴다.
+    # 힌트가 비면 search가 한국어 추상어로 검색한다 (불변식 16). 파이프라인은
+    # 그래도 돌기 때문에 기록으로 남긴다
     for component in selected:
         if not component.search_hints:
             store.add_gap(
@@ -210,7 +198,6 @@ async def _run(
     client = make_mcp_client(settings.scout_mcp_read_timeout_seconds)
     tools = {t.name: t for t in await client.get_tools()}
     # 진행 표시가 안쪽, 승인 게이트가 바깥쪽 — 거부된 검색의 진행 줄은 찍히지 않는다
-    # (001/09-출력양식.md).
     tools = wrap_all(tools)
     if "web_search" in tools:
         tools = {
@@ -239,14 +226,13 @@ def design_node(
 
     slug = state["slug"]
     settings = Settings()
-    # 게이트는 이 노드에서 새로 만든다 — search_node와 공유하면 SearchGate._lock이
-    # 다른 이벤트 루프에 묶인다 (두 노드가 각각 asyncio.run으로 루프를 연다).
+    # 게이트는 노드마다 새로 만든다 — 공유하면 _lock이 다른 이벤트 루프에 묶인다
     gate = SearchGate(
         approve=approve, max_rejections=settings.scout_max_search_rejections
     )
     design, truncated = asyncio.run(_run(state["interview"], llm, gate, settings))
 
-    # 쓰기 전에 이전 실행의 산출물을 비운다 (store.clear_stage_output 참고)
+    # 쓰기 전에 이전 실행의 산출물을 비운다
     store.clear_stage_output(slug, "design")
     store.upsert_design(slug, design.architecture)
     # 저장 전에 내린다 — DB에 내려간 상태가 들어가야 report가 이유를 렌더링한다

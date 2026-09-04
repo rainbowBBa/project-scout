@@ -1,14 +1,10 @@
-"""evaluate 단계 — 후보끼리 비교해 요소별 1위를 고른다 (stages/4-evaluate.md).
+"""evaluate 단계 — 후보끼리 비교해 결정 지점별 1위를 고른다 (stages/4-evaluate.md).
 
-verify가 판정을 끝냈으므로 여기서는 사실을 다시 해석하지 않는다. 같은 사실을 두 번
-추론하면 두 결론이 갈리고, 그러면 어느 쪽을 믿어야 할지 알 수 없다.
+verify가 판정을 끝냈으므로 사실을 다시 해석하지 않는다. 점수는 두 갈래다 —
+maturity·risk는 `rubric.py`가 계산하고(불변식 5) overall은 judge가 판단한다(불변식 6).
 
-점수를 만드는 방식이 두 갈래다:
-- maturity·risk 는 rubric.py 가 계산한다 (불변식 5 — 판정과 계산의 이중 안전망)
-- overall 은 judge 가 판단한다 (불변식 6 — 평균이 아니다)
-
-계산으로 끝나는 것은 judge에게 묻지 않는다. margin이 그 예다 — judge가 채운 값을
-코드가 뺄셈으로 덮어쓴다. 요소당 LLM 1회, 통과 후보가 1개 이하면 0회다.
+계산으로 끝나는 것은 judge에게 묻지 않는다. 결정 지점당 LLM 1회, 통과 후보가 1개
+이하면 0회다.
 """
 
 from __future__ import annotations
@@ -43,10 +39,9 @@ if TYPE_CHECKING:
     )
     from scout.state import ScoutState
 
-# 계산된 점수 한 후보분 — (maturity, risk), 각각 (점수, 근거).
+# 한 후보분 — (maturity, risk), 각각 (점수, 근거)
 Computed = dict[str, tuple[tuple[int | None, str], tuple[int | None, str]]]
 
-# 1위와 2위의 overall 차이가 이만큼이면 decisive다 (4-evaluate.md "margin").
 DEFAULT_DECISIVE_GAP = 2
 _WORD_RE = re.compile(r"[0-9A-Za-z가-힣]{3,}")
 
@@ -164,8 +159,8 @@ def normalize(
 ) -> tuple[ElementPick, list[str]]:
     """judge의 출력을 데이터에 맞춘다 — 순위 재정렬 · winner 확정 · margin 계산.
 
-    ranking은 overall 내림차순이 진실이므로 코드가 다시 정렬하고 winner를 그 첫 번째로
-    확정한다. margin은 뺄셈이라 judge가 채운 값을 그대로 덮어쓴다.
+    ranking은 overall 내림차순이 진실이므로 코드가 다시 정렬한다. margin은 뺄셈이라
+    judge가 채운 값을 덮어쓴다.
     """
     warnings: list[str] = []
     allowed = set(passing_names)
@@ -196,7 +191,7 @@ def normalize(
     overall_by_name = {s.candidate: s.overall for s in scores}
 
     def sort_key(candidate: str) -> tuple[int, int, str]:
-        # 동점은 maturity가 높은 쪽이 앞선다. unavailable(None)은 0으로 최하위가 된다.
+        # 동점은 maturity가 높은 쪽. unavailable(None)은 0으로 최하위가 된다
         maturity = computed[candidate][0][0] or 0
         return (-overall_by_name.get(candidate, 0), -maturity, candidate)
 
@@ -252,7 +247,7 @@ def audit(
     if not re.search(r"\d", pick.winner_reason):
         warnings.append(f"'{component_name}': winner_reason에 2위와의 점수 차이가 없다")
 
-    # 한 후보가 우연히 평균과 같을 수는 있다. 전원이 그러면 반례가 안 먹힌 것이다 (불변식 6).
+    # 한 후보가 우연히 평균과 같을 수는 있다. 전원이 그러면 반례가 안 먹혔다 (불변식 6)
     averaged = [s for s in pick.scores if _is_average(s.overall, computed[s.candidate])]
     if len(pick.scores) >= 2 and len(averaged) == len(pick.scores):
         warnings.append(
@@ -280,8 +275,7 @@ def store_computed_scores(
 ) -> Computed:
     """전 후보의 maturity·risk를 계산해 저장한다 — 탈락 후보도 포함한다.
 
-    탈락 후보를 빼면 "judge는 통과시켰지만 계산은 1을 줬다"를 보고서에서 보여줄 수 없고,
-    이중 안전망이 작동한 증거가 사라진다.
+    빼면 "judge는 통과시켰지만 계산은 1을 줬다"를 보고서가 보여줄 수 없다.
     """
     computed: Computed = {}
     for candidate in candidates:
@@ -321,8 +315,7 @@ def _save_pick(
     for name in pick.ranking:
         score = scored.get(name)
         if score is None:
-            # 후보가 하나뿐이라 judge를 부르지 않았거나, judge가 채점에서 빠뜨렸다.
-            # 0을 넣지 않고 없다고 적는다 (불변식 12).
+            # 0을 넣지 않고 없다고 적는다 (불변식 12)
             reason = (
                 "judge가 이 후보를 채점하지 않았다"
                 if judged
@@ -363,16 +356,16 @@ async def _evaluate_component(
     decisive_gap: int = DEFAULT_DECISIVE_GAP,
     runs_dir: str | None = None,
 ) -> tuple[ElementPick | None, list[str]]:
-    """요소 하나: 탈락 기록 → judge → 교정 → 저장. LLM 호출만 스레드로 뺀다.
+    """결정 지점 하나: 탈락 기록 → judge → 교정 → 저장.
 
-    store 접근을 이벤트 루프 스레드에 남겨두면 요소를 병렬로 돌려도 sqlite 쓰기가
-    저절로 직렬화된다 (verify와 같은 이유).
+    LLM 호출만 스레드로 뺀다 — store 접근을 루프 스레드에 남기면 sqlite 쓰기가
+    저절로 직렬화된다.
     """
     store.clear_picks(slug, component_name, runs_dir=runs_dir)
 
     passing = [v for v in verdicts if v.solves_it]
     for verdict in (v for v in verdicts if not v.solves_it):
-        # 탈락 사유는 judge가 이미 근거와 함께 썼다 — 새로 만들지 않고 그대로 인용한다.
+        # 탈락 사유는 judge가 이미 썼다 — 새로 만들지 않고 인용한다
         store.add_pick(
             slug,
             component_name,
@@ -465,7 +458,7 @@ async def _run_evaluate(
     gaps: list[str] = []
     for name, result in zip(names, results, strict=True):
         if isinstance(result, BaseException):
-            # 요소 하나가 죽어도 나머지 요소는 계속 간다 (불변식 11).
+            # 하나가 죽어도 나머지는 계속 간다 (불변식 11)
             gap = f"'{name}' 평가 실패: {result}"
             store.add_gap(slug, name, gap, runs_dir=runs_dir)
             gaps.append(gap)

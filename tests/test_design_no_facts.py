@@ -1,19 +1,11 @@
 """`design`의 툴 결과가 dossier를 오염시키지 않는지 검사한다 — 네트워크를 쓰지 않는다.
 
-검증하는 주장: **dossier는 `search`만 만든다** (불변식 15). `design`도 에이전트로
-툴을 부르게 되면서 생긴 새 위험이다 — 설계 중에 스쳐본 값을 `facts`에 섞으면 kind
-라우팅·top-up을 거치지 않은 사실이 judge의 인용 대상이 되어, **grounding은 통과하는데
-후보마다 근거 커버리지가 달라진다.** 불변식 4·13이 서 있는 자리가 무너진다.
+검증하는 주장: **dossier는 `search`만 만든다** (불변식 15). 설계 중에 스쳐본 값을
+`facts`에 섞으면 라우팅·top-up을 안 거친 사실이 judge의 인용 대상이 되어, grounding은
+통과하는데 후보마다 근거 커버리지가 달라진다.
 
-`test_search_approval` 7번과 **같은 성격의 경계를 반대편에서** 지킨다 — 저쪽은
-"사실은 툴 원본에서만 나온다", 이쪽은 "그 원본이라도 `design`에서는 사실이 아니다".
-
-여기서 LLM 대역과 에이전트 대역을 쓰는 이유는, **툴을 실제로 부른 실행**에서 facts가
-비어 있음을 봐야 하기 때문이다. 툴을 안 부르면 이 테스트는 아무것도 증명하지 않는다.
-
-3번(`search_hints`)은 다른 둘과 성격이 다르다 — 경계가 아니라 **이 단계를 만든 이유**를
-지킨다. 힌트가 비어도 파이프라인은 돌기 때문에(그게 `analyze` 시절의 상태였다) 조용히
-원래대로 돌아가는 걸 막을 장치가 필요하다.
+대역을 쓰는 이유는 **툴을 실제로 부른 실행**에서 facts가 비어 있음을 봐야 하기
+때문이다 — 툴을 안 부르면 아무것도 증명하지 않는다.
 """
 
 import sqlite3
@@ -192,10 +184,7 @@ def _notes(runs_dir: str) -> list[str]:
 def test_design_calls_a_tool_but_writes_no_facts(
     runs_dir: str, monkeypatch: pytest.MonkeyPatch
 ):
-    """★ 툴 호출이 **실제로 일어난** 실행에서 facts가 비어 있어야 한다.
-
-    툴을 안 불렀으면 이 테스트는 아무것도 증명하지 않으므로, 호출됐다는 것을 먼저 본다.
-    """
+    """툴 호출이 실제로 일어난 실행에서 facts가 비어 있어야 한다."""
     result, spy, _ = _run_design_node(runs_dir, monkeypatch, _design_fixture())
 
     assert spy.calls == [{"name": "socket.io"}], "설계 에이전트가 툴을 부르지 않았다"
@@ -212,10 +201,9 @@ def test_design_calls_a_tool_but_writes_no_facts(
 def test_the_value_design_saw_reaches_the_design_not_the_dossier(
     runs_dir: str, monkeypatch: pytest.MonkeyPatch
 ):
-    """★ 같은 payload가 **설계에는 전달되고 dossier에는 안 들어간다.**
+    """같은 payload가 설계에는 전달되고 dossier에는 안 들어간다.
 
-    "facts가 비었다"만 보면 툴 값이 애초에 어디에도 안 갔을 수도 있다. 값이 설계
-    프롬프트까지는 갔다는 것을 함께 봐야 경계가 지켜졌다는 뜻이 된다.
+    "facts가 비었다"만 보면 값이 애초에 어디에도 안 갔을 수도 있다.
     """
     _, _, llm = _run_design_node(runs_dir, monkeypatch, _design_fixture())
 
@@ -231,11 +219,7 @@ def test_the_value_design_saw_reaches_the_design_not_the_dossier(
 def test_design_does_not_touch_a_dossier_search_already_built(
     runs_dir: str, monkeypatch: pytest.MonkeyPatch
 ):
-    """`search`가 만든 사실은 그대로 두고, 거기에 자기 값을 얹지도 않는다.
-
-    `clear_stage_output(slug, "design")`이 facts를 비우지 않는다는 뜻이기도 하다 —
-    `design`의 산출물이 아니므로 지울 것도 없고 더할 것도 없다.
-    """
+    """`search`가 만든 사실은 그대로 두고 자기 값을 얹지도 않는다."""
     searched = Fact(
         id="npm.last_release",
         label="마지막 릴리스",
@@ -259,7 +243,7 @@ def test_design_does_not_touch_a_dossier_search_already_built(
 def test_empty_search_hints_are_recorded_as_a_gap(
     runs_dir: str, monkeypatch: pytest.MonkeyPatch
 ):
-    """★ 힌트가 비면 `search`가 한국어 추상어로 `npm_search`를 부른다 (불변식 16).
+    """힌트가 비면 `search`가 한국어 추상어로 검색한다 (불변식 16).
 
     파이프라인은 그래도 돌기 때문에 기록이 없으면 조용히 회귀한다.
     """

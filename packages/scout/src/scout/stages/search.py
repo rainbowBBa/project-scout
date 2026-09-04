@@ -1,17 +1,11 @@
-"""search 단계 — ReAct 에이전트가 툴을 골라 후보를 찾고 dossier를 모은다.
+"""search 단계 — ReAct 에이전트가 툴을 골라 후보를 찾고 dossier를 모은다
+(001/stages/2-search.md).
 
-요소마다 `langchain.agents.create_agent` 하나를 돌린다 (001/stages/2-search.md). 에이전트는
-**어떤 툴을 부를지만** 정한다 — `Fact.value`는 에이전트가 쓴 문장이 아니라
-`ToolMessage`의 원본 payload에서 코드가 뽑는다. 이 경계가 무너지면 judge가 인용하는
-dossier 자체가 LLM 생성물이 되어 불변식 4가 지탱하던 "judge는 사실을 지어낼 수 없다"가
-뿌리에서 깨진다.
+결정 지점마다 에이전트 하나를 돌린다. 에이전트는 **어떤 툴을 부를지만** 정한다 —
+`Fact.value`는 `ToolMessage`의 원본 payload에서 코드가 뽑는다 (불변식 13).
 
-`web_search`는 사람 승인을 거친다 — 거부되면 원본 툴을 호출하지 않으므로 egress가
-일어나지 않고, 거부 사유가 툴 결과로 에이전트에 돌아가 질의를 고쳐 재시도한다.
-게이트 구현은 `scout/approval.py`, 에이전트 기록 파싱은 `scout/agentkit.py`에 있다
-— `design`과 공유한다.
-LangGraph `interrupt()`를 쓰지 않는 이유는 2-search.md "왜 interrupt()가 아닌가" 참고 —
-승인 콜러블이 나중에 `interrupt()`로 갈아끼울 이음매다.
+`web_search`는 사람 승인을 거친다 (`scout/approval.py`). `interrupt()`가 아니라 주입
+콜러블을 쓰는 이유는 2-search.md "왜 interrupt()가 아닌가".
 """
 
 from __future__ import annotations
@@ -79,8 +73,7 @@ _GH_FIELDS = (
     ("gh.stars", "스타", "stars"),
     ("gh.issue_close_rate", "이슈 처리율", "issue_resolution_rate"),
 )
-# 0건은 사실이므로 `osv.vulns`가 "0"으로 남아야 한다 — rubric이 그걸 5점으로 읽는다.
-# 등급·ID는 0건이면 provider가 빈 값으로 주고, 빈 값은 사실이 되지 않는다.
+# 0건도 사실이다 — `osv.vulns`가 "0"으로 남아야 rubric이 5점을 줄 근거가 있다
 _OSV_FIELDS = (
     ("osv.vulns", "알려진 취약점", "vulns"),
     ("osv.max_severity", "최고 심각도", "max_severity"),
@@ -210,7 +203,7 @@ async def _call_tool(
         return None, f"{name} 조회 실패: {e}"
 
 
-# 레지스트리 접두사 → OSV ecosystem 표기. 버전을 어디서 읽었는지가 곧 생태계다.
+# 버전을 어디서 읽었는지가 곧 생태계다
 _OSV_ECOSYSTEMS = (("npm", "npm"), ("pypi", "PyPI"))
 
 
@@ -222,10 +215,8 @@ async def _topup_vulns(
 ) -> tuple[list[Fact], list[str]]:
     """레지스트리에서 읽은 버전으로 취약점을 조회한다.
 
-    버전을 못 찾으면 **조회하지 않는다.** 버전 없이 물으면 이미 고쳐진 과거 취약점까지
-    세어 성숙한 패키지가 위험해 보이고, 그 숫자가 `rubric.risk`를 그대로 깎는다.
-    조회하지 않으면 risk는 "osv 미조회 — 취약점 항목 제외" 경로로 가서 근거 없이
-    후해지지도 않는다 (rubric.risk 참고).
+    버전을 못 찾으면 조회하지 않는다 — 버전 없이 물으면 이미 고쳐진 과거 취약점까지
+    세어 성숙한 패키지가 위험해 보인다. 그때 risk는 "미조회" 경로로 간다.
     """
     values = {f.id: f.value for f in facts}
     for prefix, ecosystem in _OSV_ECOSYSTEMS:
@@ -273,8 +264,7 @@ async def topup_dossier(
         if not has("npm.") and not has("pypi."):
             gaps.append(f"레지스트리에서 '{draft_name}'을 찾지 못함")
 
-    # 레지스트리 사실을 채운 **뒤에** 온다 — 취약점은 버전을 특정해야 물을 수 있고,
-    # 그 버전이 방금 읽은 latest_version이다 (providers/osv.py "버전을 반드시 함께").
+    # 레지스트리 사실을 채운 뒤에 온다 — 취약점은 버전을 특정해야 물을 수 있다
     if kind == "library" and not has("osv."):
         extra_osv, osv_gaps = await _topup_vulns(
             draft_name, [*facts, *extra], tools, now
@@ -321,7 +311,7 @@ async def _search_component(
     agent = create_agent(
         llm,
         list(tools.values()),
-        # 예산 숫자를 문장에 굳히지 않는다 (design과 같은 이유).
+        # 예산을 주입한다 — 굳혀두면 설정을 내렸을 때 프롬프트가 거짓이 된다
         system_prompt=SEARCH_AGENT_SYSTEM_PROMPT.format(
             web_search_budget=settings.scout_search_web_searches
         ),
@@ -349,11 +339,9 @@ async def _search_component(
         step("툴 탐색 한도 도달 — 모은 기록으로 후보를 뽑는다", subject=component.name)
     step("후보 추출", subject=component.name)
 
-    # ★ 스레드로 뺀다 — `invoke_structured`는 동기 `.invoke()`라 그냥 부르면 이벤트
-    # 루프를 막는다. 요소를 병렬로 돌리는데 여기서 루프가 멈추면 (1) 다른 요소가 사실상
-    # 순차 실행되고 (2) 그 요소의 웹검색 승인 결과가 루프로 못 돌아와 **사람이 y를
-    # 눌렀는데 몇 초씩 반응이 없다.** `verify`·`evaluate`는 같은 처리를 하고 있다.
-    # store 접근은 루프 스레드에 남긴다 — sqlite 쓰기가 저절로 직렬화된다.
+    # 스레드로 뺀다 — `invoke_structured`는 동기라 루프를 막고, 그러면 다른 요소가
+    # 순차 실행되며 그 요소의 승인 결과도 루프로 못 돌아온다.
+    # store 접근은 루프 스레드에 남긴다 — sqlite 쓰기가 저절로 직렬화된다
     parsed, raw = await asyncio.to_thread(
         invoke_structured,
         SEARCH_EXTRACT_PROMPT,

@@ -1,8 +1,7 @@
 """웹검색 승인 게이트의 배선을 검사한다 — LLM도 네트워크도 쓰지 않는다.
 
-검증하는 주장: **거부하면 egress가 실제로 일어나지 않는다.** 승인 문구만 띄우고
-그 뒤로 툴이 그냥 나가버리면 보안 기능이 장식이 된다. `test_necessity_wiring`과 같은
-성격이다 — 판단이 아니라 배선을 본다.
+검증하는 주장: **거부하면 egress가 실제로 일어나지 않는다** (불변식 14). 승인 문구만
+띄우고 툴이 그냥 나가면 보안 기능이 장식이 된다.
 """
 
 import asyncio
@@ -32,7 +31,7 @@ _TIMEOUT = 5.0
 
 
 class _SpyTool:
-    """원본 MCP 툴 대역. 호출되면 기록한다 — 호출 자체가 egress다."""
+    """원본 MCP 툴 대역. 호출 자체가 egress다."""
 
     name = "web_search"
     description = "웹 검색"
@@ -85,7 +84,7 @@ async def test_repeated_rejection_blocks_further_search():
 
 
 async def test_budget_caps_approved_searches():
-    """예산이 없으면 에이전트가 한 요소에 15번씩 검색해 승인 프롬프트를 그만큼 띄운다."""
+    """예산이 없으면 에이전트가 한 결정 지점에 열 번 넘게 검색한다."""
     spy = _SpyTool()
     gate = SearchGate(approve=lambda q: Approval(True))
     tool = wrap_web_search(spy, gate, budget=2)
@@ -123,11 +122,7 @@ async def test_non_interactive_blocks_without_prompting():
 
 
 def test_approval_notice_names_the_query():
-    """무엇이 나가는지 문구에 들어가야 한다 — 질의를 감추면 게이트가 장식이 된다.
-
-    문구 자체는 출력 양식(001/09-출력양식.md)을 따라 바뀔 수 있다. 검사하는 것은
-    형식이 아니라 **질의가 사람에게 보인다**는 것이다.
-    """
+    """질의가 사람에게 보여야 한다 — 감추면 게이트가 장식이 된다."""
     notice = APPROVAL_NOTICE.format(query="socket.io alternative")
 
     assert "socket.io alternative" in notice
@@ -155,7 +150,7 @@ class _FakeToolMessage:
 
 
 def test_facts_come_from_tool_payload_not_llm_text(monkeypatch):
-    """judge가 인용할 사실은 ToolMessage 원본에서 나와야 한다 (불변식 4의 뿌리)."""
+    """judge가 인용할 사실은 ToolMessage 원본에서 나온다 (불변식 13)."""
     import scout.agentkit as agentkit
 
     monkeypatch.setattr(agentkit, "ToolMessage", _FakeToolMessage)
@@ -195,11 +190,7 @@ def test_facts_are_not_attached_to_unrelated_candidate(monkeypatch):
 
 
 def test_default_approve_holds_progress_lines(monkeypatch, capsys):
-    """★ 창이 `default_approve`에 있다 — 이 배치가 `auto_approve` 분기를 없앤다.
-
-    사람 대역이 답하는 동안 `step()`을 부르고, 반환 전에는 화면이 비어 있고 반환
-    뒤에 찍히는지 본다. 스레드 없이 결정적이다.
-    """
+    """보류 창이 `default_approve`에 있다 — 스레드 없이 결정적으로 검사한다."""
 
     def confirm(_text, default=False):
         step("npm_package \"jose\"", subject="인증")
@@ -230,11 +221,7 @@ def test_auto_approve_does_not_hold(monkeypatch, capsys):
 
 
 def test_non_interactive_still_flushes(monkeypatch, capsys):
-    """★ `finally` 누락 회귀의 유일한 방어선.
-
-    `default_approve`는 `NonInteractive`를 던진다. 예외 경로에서 flush를 빼먹으면
-    **남은 실행 전체가 조용해진다** — 원래 버그보다 나쁘다.
-    """
+    """`finally` 누락 회귀의 방어선 — 예외 경로에서 flush를 빼먹으면 남은 실행이 조용해진다."""
 
     def confirm(_text, default=False):
         step("보류된 줄")
@@ -250,13 +237,9 @@ def test_non_interactive_still_flushes(monkeypatch, capsys):
 
 
 async def test_second_question_never_overlaps_the_first(capsys):
-    """★ 다음 승인 문의는 보류 창 안에서 찍히지 않는다 — 질문은 한 번에 하나다.
+    """질문은 한 번에 하나다 — `check`가 `_lock`을 프롬프트 내내 잡는다.
 
-    두 근거가 각각 독립적이다. (1) `check`가 `_lock`을 프롬프트 내내 잡으므로 요소 B는
-    질문을 **시작조차** 못 한다 (2) 질문은 `typer.confirm`이 직접 찍으므로 `step()`
-    버퍼에 애초에 들어가지 않는다.
-
-    지금은 성립하지만 누가 `_lock`의 임계구역을 좁히면 조용히 깨진다 — 그래서 고정한다.
+    임계구역을 좁히면 조용히 깨지는 자리라 고정한다.
     """
     order: list[str] = []
     first_asking = threading.Event()

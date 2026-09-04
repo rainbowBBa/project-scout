@@ -1,16 +1,12 @@
 """낡은 사실이 최종 추천을 바꾸는지 검사한다 — LLM도 네트워크도 쓰지 않는다.
 
 검증하는 주장: **아카이브된·릴리스가 끊긴 후보는 최종 순위에서 1위가 되지 않는다.**
-이게 안 되면 이 도구의 존재 이유가 없다 — 사실을 모으는 값어치가 결과에 반영되지
-않는다는 뜻이다.
 
-★ **이중 안전망을 두 경로로 나눠 본다** (불변식 5). judge가 낡은 사실을 무시해도
-`evaluate`의 `maturity` 계산이 잡으므로, **판정과 계산 중 하나만 작동해도 통과한다.**
-그래서 두 경로를 각각 혼자 세워놓고 본다 — 둘을 한 시나리오에서 같이 보면 어느 쪽이
-일했는지 알 수 없고, 한쪽이 죽어도 테스트가 통과한다.
+이중 안전망(불변식 5)이므로 **판정과 계산 중 하나만 작동해도 통과한다** — 두 경로를
+각각 혼자 세워놓고 본다. 한 시나리오에서 같이 보면 한쪽이 죽어도 통과한다.
 
-날짜는 고정 문자열이다. `rubric`의 구간은 1095일이 상한이라 2019년 릴리스는 언제
-돌려도 최하점이고, `gh.archived`는 날짜를 아예 보지 않는다.
+날짜는 고정 문자열이다 — `rubric`의 상한이 1095일이라 2019년 릴리스는 언제 돌려도
+최하점이고 `gh.archived`는 날짜를 보지 않는다.
 """
 
 import asyncio
@@ -199,10 +195,10 @@ def _run_component(
 
 
 def test_judge_rejection_drops_it_and_cites_the_release_fact(runs_dir: str):
-    """★ 판정 경로 — judge가 탈락시키면 순위에 아예 들어가지 않는다.
+    """판정 경로 — judge가 탈락시키면 순위에 들어가지 않는다.
 
-    탈락 사유는 judge가 근거와 함께 쓴 문장을 그대로 인용한다 — 코드가 새로 만들지
-    않으므로 "마지막 릴리스"가 사유에 남는 것이 곧 사실이 판단을 바꿨다는 증거다.
+    사유는 judge가 쓴 문장을 그대로 인용하므로, "마지막 릴리스"가 남는 것이 곧 사실이
+    판단을 바꿨다는 증거다.
     """
     verdicts = [
         _verdict(
@@ -295,11 +291,7 @@ class _BlindJudge:
 
 
 def test_computation_overrides_the_judge_when_scores_tie(runs_dir: str):
-    """★ 계산 경로 — judge가 낡은 후보를 1위로 써도 `maturity`가 순위를 뒤집는다.
-
-    `normalize`의 동점 정렬이 `maturity`를 보므로 계산이 마지막 방어선이 된다.
-    판정 경로가 죽어도 아카이브 후보가 권장 스택에 올라가지 않는다.
-    """
+    """계산 경로 — judge가 낡은 후보를 1위로 써도 동점 정렬의 `maturity`가 뒤집는다."""
     verdicts = [
         _verdict(STALE, solves_it=True, reason="익숙한 API", citations=["npm.license"]),
         _verdict(FRESH, solves_it=True, reason="활발히 유지된다", citations=["npm.license"]),

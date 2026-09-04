@@ -1,8 +1,6 @@
 """maturity·risk 점수 공식 (stages/4-evaluate.md "점수 공식").
 
-이 두 점수를 코드가 계산하는 이유는 불변식 5다 — judge가 낡은 사실을 무시해도 계산이
-잡는 이중 안전망이다. "마지막 릴리스 1,690일 전"의 성숙도는 계산이지 판단이 아니다.
-
+코드가 계산하는 이유는 불변식 5다 — judge가 낡은 사실을 무시해도 계산이 잡는다.
 가중치 매핑도 정규화도 없다. 두 공식과 그 근거 문자열뿐이다.
 """
 
@@ -41,8 +39,8 @@ def _by_id(facts: Sequence[Fact]) -> dict[str, str]:
 def _flag(raw: str | None) -> bool:
     """저장된 bool 문자열과 npm의 deprecated 메시지를 함께 다룬다.
 
-    facts.value는 전부 str(value)로 들어오므로 False도 "False"라는 문자열로 남는다.
-    npm.deprecated는 bool이 아니라 사용 중단 안내 문장으로 오기도 한다.
+    `facts.value`는 전부 str이라 False도 "False"로 남고, `npm.deprecated`는 bool이
+    아니라 안내 문장으로 오기도 한다.
     """
     if raw is None:
         return False
@@ -100,9 +98,8 @@ def maturity(
 ) -> tuple[int | None, str]:
     """세 신호(릴리스 최근성·커밋 활성·기여자 수)의 최소값. 없는 신호는 채우지 않는다.
 
-    최소값을 쓰는 이유는 가장 약한 신호가 성숙도를 결정하기 때문이다 — 별이 5만 개라도
-    3년째 커밋이 없으면 성숙한 게 아니다. 없는 신호를 5로 채우면 조회 실패가 좋은
-    점수로 둔갑하고, 1로 채우면 gh 사실이 없는 후보가 전부 최하점이 된다.
+    가장 약한 신호가 성숙도를 결정한다. 없는 신호를 5로 채우면 조회 실패가 좋은 점수로
+    둔갑하고, 1로 채우면 gh 사실이 없는 후보가 전부 최하점이 된다.
     """
     now = now or datetime.now(UTC)
     values = _by_id(facts)
@@ -150,11 +147,10 @@ def maturity(
 
 
 def risk(facts: Sequence[Fact]) -> tuple[int | None, str]:
-    """높을수록 안전한 1~5. 취약점 → 라이선스 순으로 감점하고 1~5로 클램프한다.
+    """높을수록 안전한 1~5. 취약점 → 라이선스 순으로 감점하고 클램프한다.
 
     osv.*가 없으면 취약점 항목을 건너뛴다 — "조회하지 않았다"를 "0건이다"로 대접하면
-    risk가 근거 없이 후해진다. 취약점은 버전을 특정해서만 묻기 때문에(search._topup_vulns)
-    레지스트리에서 버전을 못 찾은 후보는 지금도 이 경로로 온다.
+    risk가 근거 없이 후해진다.
     """
     values = _by_id(facts)
 
@@ -174,8 +170,8 @@ def risk(facts: Sequence[Fact]) -> tuple[int | None, str]:
             parts.append("osv.max_severity CRITICAL → 1")
 
     license_id = next((f for f in _LICENSE_IDS if values.get(f)), None)
-    # 레지스트리 사실이 있는데 라이선스만 없으면 그건 진짜 "불명"이다. 레지스트리 자체가
-    # 없는 후보(software·method)는 판단 근거가 없는 것이므로 이 항목을 건너뛴다.
+    # 레지스트리 사실이 있는데 라이선스만 없으면 진짜 "불명"이다. 레지스트리 자체가
+    # 없는 후보(software·method)는 판단 근거가 없으므로 건너뛴다
     if license_id or any(k.startswith(_REGISTRY_PREFIXES) for k in values):
         if score is None:
             score = 5

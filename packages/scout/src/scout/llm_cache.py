@@ -32,8 +32,8 @@ from langchain_core.outputs import (
     GenerationChunk,
 )
 
-# `loads`의 기본 allowlist(`"core"`)는 앞으로 바뀐다고 경고한다 — 실제로 저장되는
-# 클래스만 명시해 기본값 변경에 영향받지 않게 하고, 역직렬화 범위도 좁힌다.
+# `loads`의 기본 allowlist는 앞으로 바뀐다고 경고한다. 저장되는 클래스만 명시해
+# 기본값 변경에 영향받지 않게 하고 역직렬화 범위도 좁힌다
 _ALLOWED = [
     ChatGeneration,
     ChatGenerationChunk,

@@ -1,9 +1,9 @@
-"""웹 검색 — `method` 후보(아키텍처 패턴 등)의 유일한 근거 (04-아키텍처.md).
-`ddgs` 라이브러리로 검색하되, backend는 `google`로 고정한다 — "auto"는 여러
-엔진을 재현 불가능하게 섞어 쓴다. 고정값을 duckduckgo/bing이 아닌 google로
-정한 근거(결과 품질 비교)는 `CHANGELOG.md` v15 참고.
-프로토타입용 **교체 지점**. 사내 검색 API가 생기면 이 함수만 갈아끼운다 —
-`SCOUT_SEARCH_PROVIDER`.
+"""웹 검색 — `method` 후보의 유일한 근거 (04-아키텍처.md).
+
+backend를 `google`로 고정한다 — `"auto"`는 여러 엔진을 재현 불가능하게 섞어 쓴다.
+`SCOUT_EGRESS_ALLOWLIST`의 호스트와 짝이므로 함께 바꿔야 한다.
+
+교체 지점이다 — 사내 검색 API가 생기면 `SCOUT_SEARCH_PROVIDER`로 이 함수만 갈아끼운다.
 """
 
 import asyncio

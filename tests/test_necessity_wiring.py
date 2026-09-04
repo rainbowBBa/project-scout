@@ -1,19 +1,10 @@
 """걸러낸 결정 지점이 실제로 걸러지는지 검사한다 — LLM도 네트워크도 쓰지 않는다.
 
 검증하는 주장: **`design`이 걸러낸 것은 `search`에 들어가지 않고, 보고서에서는
-사라지지 않는다.** 이 도구의 차별점은 둘인데(grounding · `necessity`) 앞의 것만
-테스트가 있으면 증거가 비대칭이다 (07-검증.md).
+사라지지 않는다** (07-검증.md).
 
-걸러놓고 `search`가 그냥 다 조사하면 "최소 1개 걸러짐"은 통과하지만 기능은 아무
-효과가 없다. 반대로 걸러진 것이 보고서에서 지워지면 사용자는 설계가 무엇을 전제로
-깔았는지 알 수 없다 (불변식 12). 그 두 경우를 여기서 잡는다.
-
-★ 통과 필터는 **축이 셋**이다 — `necessity`("필요한가") · `needs_comparison`("지금
-비교해서 골라야 하는가") · `alternatives`("고를 것이 있는가"). 앞의 둘이 다른 축인
-이유는 불변식 17, 셋째는 불변식 18에 있다. 세 축이 각각 살아 있는지를 본다
-(셋째의 세부는 `test_decision_points`가 더 깊게 본다).
-
-`test_search_approval`·`test_grounding`과 같은 성격이다 — 판단의 품질이 아니라 배선을 본다.
+통과 필터의 축은 셋이다 — `necessity`(불변식 17) · `needs_comparison`(불변식 17) ·
+`alternatives`(불변식 18). 셋째의 세부는 `test_decision_points`가 본다.
 """
 
 from pathlib import Path
@@ -32,9 +23,8 @@ SLUG = "necessity-wiring"
 def runs_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
     """store 기본 경로를 tmp로 돌린다.
 
-    `search_node`와 `_record_gaps`는 `runs_dir`을 받지 않고 `Settings()`로 푼다 —
-    그래서 인자가 아니라 환경으로 돌린다. `AWS_DEFAULT_REGION`은 `Settings`의 필수
-    필드라 값이 있어야 생성된다 (크레덴셜이 아니다 — 불변식 9).
+    `search_node`·`_record_gaps`가 `runs_dir`을 받지 않고 `Settings()`로 풀기 때문에
+    인자가 아니라 환경으로 돌린다.
     """
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
     monkeypatch.setenv("SCOUT_RUNS_DIR", str(tmp_path))
@@ -112,11 +102,7 @@ def test_closed_decisions_do_not_reach_search():
 
 
 def test_thin_alternatives_do_not_reach_search():
-    """축 3 — 고를 보기가 없으면 결정 지점이 아니다 (불변식 18).
-
-    세부는 `test_decision_points`가 본다. 여기서는 **통과 필터의 축으로 살아 있는지**만
-    확인한다 — 축이 조용히 빠지면 억지 후보가 다시 1위로 올라온다.
-    """
+    """축 3 — 고를 보기가 없으면 결정 지점이 아니다 (불변식 18)."""
     components = [
         _component("실시간 메시지 전달"),
         _component("에이전트 라이브러리", alternatives=["LangChain"]),
@@ -136,10 +122,7 @@ def test_three_axes_are_independent():
 
 
 def test_priority_cut_is_the_last_filter_not_the_first():
-    """규모 조절은 **통과한 것 중에서** 자른다 — 걸러내기와 순서가 바뀌면 안 된다.
-
-    반대 순서면 priority가 앞선 defer 요소가 자리를 차지해 통과 요소가 밀려난다.
-    """
+    """규모 컷은 통과한 것 중에서 자른다 — 순서가 바뀌면 defer 요소가 자리를 차지한다."""
     components = [
         _component("인증", needs_comparison=False, priority=1),
         _component("메시지 전문검색", necessity="defer", priority=2),
@@ -155,10 +138,7 @@ def test_priority_cut_is_the_last_filter_not_the_first():
 
 
 def test_filtered_components_still_persist_for_the_report(runs_dir: str):
-    """걸러진 것도 `components` 테이블에는 전부 남는다 — 여기서 잘리면 보고서가 못 쓴다.
-
-    `select_passing_components`가 자르는 것은 **상태로 넘기는 부분집합**일 뿐이다.
-    """
+    """걸러진 것도 `components`에는 전부 남는다 — 자르는 건 상태로 넘기는 부분집합이다."""
     store.upsert_components(SLUG, _all_four(), runs_dir=runs_dir)
 
     stored = store.get_components(SLUG, runs_dir=runs_dir)
@@ -171,11 +151,7 @@ def test_filtered_components_still_persist_for_the_report(runs_dir: str):
 
 
 def test_search_skips_entirely_when_nothing_passes(runs_dir: str):
-    """★ 소비자 쪽 배선 — `search`는 `state["components"]`만 본다.
-
-    통과 목록이 비면 MCP도 LLM도 부르지 않고 나온다. 여기서 DB의 전체 요소를 다시
-    읽으면 걸러내기가 예산을 하나도 아끼지 못한다.
-    """
+    """소비자 쪽 배선 — `search`가 DB의 전체 요소를 다시 읽으면 예산이 안 줄어든다."""
     store.upsert_components(SLUG, _all_four(), runs_dir=runs_dir)
 
     result = search_node({"slug": SLUG, "components": []}, llm=None)
@@ -199,11 +175,7 @@ def _rendered_sections(runs_dir: str) -> tuple[str, str, str]:
 
 
 def test_deferred_and_closed_land_in_different_sections(runs_dir: str):
-    """★ "필요 없어서"와 "이미 정해져서"는 다른 섹션이다 (불변식 17).
-
-    합치면 사용자가 설계의 전제를 못 본다 — 안 만들어도 되는 것과, 만들지만 이미
-    정해둔 것은 다음 행동이 다르다.
-    """
+    """"필요 없어서"와 "이미 정해져서"는 다른 섹션이다 (불변식 17)."""
     store.upsert_components(SLUG, _all_four(), runs_dir=runs_dir)
 
     closed, deferred, _ = _rendered_sections(runs_dir)
@@ -274,11 +246,7 @@ def _notes(runs_dir: str) -> list[str]:
 
 
 def test_no_filtering_at_all_is_recorded(runs_dir: str):
-    """★ 전부 통과하면 프롬프트 반례가 안 먹힌 것이다 — 조용히 넘기지 않는다.
-
-    이게 없으면 `necessity`·`needs_comparison`이 사실상 항상 true인 상태로 회귀해도
-    파이프라인은 정상으로 보인다 (그게 `analyze` 시절의 상태였다).
-    """
+    """전부 통과하면 프롬프트 반례가 안 먹힌 것이다 — 조용히 넘기지 않는다."""
     components = [_component("실시간 메시지 전달"), _component("인증", priority=2)]
 
     _record_gaps(SLUG, _design(components), components, [])

@@ -1,12 +1,10 @@
 """report 단계 — scout.db를 jinja2로 단일 HTML로 렌더링한다 (stages/5-report.md).
 
-LLM을 쓰지 않는다 (불변식 7) — evaluate까지 끝낸 구조화된 결과를 SQL로 모아 템플릿에
-꽂기만 한다. 요약 문장이 필요한 자리는 judge가 이미 쓴 문장(`solves_reason`,
-`winner_reason` 등)을 그대로 인용한다.
+LLM을 쓰지 않는다 (불변식 7) — SQL로 모아 템플릿에 꽂기만 하고, 문장이 필요한 자리는
+judge가 이미 쓴 것을 인용한다.
 
-`sentences` 필터가 그 인용을 문단으로 끊는다. 문장을 고치지도 줄이지도 않는다 —
-경계에서 자르기만 하는 순수 함수다. judge의 문장은 실측에서 한 문단이 630자였고
-저장된 값에 줄바꿈이 하나도 없어서, 끊어주지 않으면 화면이 글자 벽이 된다.
+`sentences` 필터는 그 인용을 문장 경계에서 끊기만 한다 — 저장된 값에 줄바꿈이 없어
+끊지 않으면 화면이 글자 벽이 된다.
 """
 
 from __future__ import annotations
@@ -28,33 +26,28 @@ _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 _PASSING_NECESSITY = {"essential", "valuable"}
 _DEFERRED_NECESSITY = {"defer", "unnecessary"}
 
-# 문장 끝 뒤의 공백에서만 끊는다.
-#   `(?<=[다요](?:\.|\. ))` 로 한국어 종결을 우선 잡고, 그 밖의 `.!?`는 **뒤에 오는 것이
-#   숫자가 아닐 때만** 끊는다 — 그래야 `4.17.11`·`$200. 5`·`vs.` 에서 안 잘린다.
+# 한국어 종결(`다.`·`요.`)을 우선 잡고, 그 밖의 `.!?`는 뒤가 숫자가 아닐 때만 끊는다
+# — `4.17.11`·`$200. 5`·`vs.` 에서 잘리지 않게 한다.
 _SENTENCE_END = re.compile(r"(?<=[다요][.!?])\s+|(?<=[.!?])\s+(?=[가-힣A-Z(\[])")
 # LLM이 줄바꿈을 넣어주면 그게 문단 경계다 (지금은 안 넣지만 오면 존중한다).
 _PARAGRAPH = re.compile(r"\n\s*\n|\n")
 
 
 def split_sentences(text: str) -> list[str]:
-    """문단으로 끊을 조각들. 빈 조각은 버린다.
-
-    template에서 부르지 말고 `sentences` 필터를 쓴다 — 이 함수는 테스트가 경계 규칙을
-    직접 검사하기 위해 열려 있다.
-    """
+    """문단으로 끊을 조각들. 템플릿은 `sentences` 필터를 쓴다."""
     chunks: list[str] = []
     for block in _PARAGRAPH.split(text or ""):
         chunks.extend(part.strip() for part in _SENTENCE_END.split(block))
     return [c for c in chunks if c]
 
 
-# `<summary>`에 넣을 길이. 실측에서 judge의 **첫 문장 자체가 313자**인 경우가 있었다 —
-# 문장을 중간에서 끊는 건 고치는 것이므로, 접힌 전문은 그대로 두고 요약 줄만 자른다.
+# judge의 첫 문장이 300자를 넘기도 한다. 문장 안을 자르는 건 고치는 것이므로
+# 접힌 전문은 그대로 두고 `<summary>` 줄만 자른다
 DEFAULT_SUMMARY_CHARS = 90
 
 
 def _summary_line(text: str, summary_chars: int = DEFAULT_SUMMARY_CHARS) -> str:
-    """접힌 블록의 `<summary>` 한 줄. 전문은 바로 아래에 있으므로 감추는 게 아니다."""
+    """접힌 블록의 `<summary>` 한 줄. 전문은 바로 아래 접혀 있다."""
     first = (split_sentences(text) or [""])[0]
     if len(first) <= summary_chars:
         return first
@@ -72,13 +65,10 @@ def _sentences(text: str) -> Markup:
     return Markup("").join(Markup("<p>{}</p>").format(escape(p)) for p in parts)
 
 
-# 제목 상한. 프롬프트가 40자를 요구하지만 지시 준수가 약한 모델에서도 화면이 버텨야 한다.
 DEFAULT_TITLE_CHARS = 60
-# 보고서 "가장 큰 위험"에 싣는 개수. 0이면 섹션이 사라진다 (불변식 12).
 DEFAULT_RISKS_SHOWN = 3
 
-# 점수의 출처 배지. CSS 클래스는 영어를 그대로 쓰고 **보이는 글자만** 한글이다 —
-# `rubric.COMPUTED`·`UNAVAILABLE`이 DB에 들어가는 값이라 그쪽을 건드리면 안 된다.
+# 보이는 글자만 한글이다 — CSS 클래스와 DB의 `scores.source` 값은 영어를 그대로 쓴다
 _SOURCE_LABELS = {"computed": "계산", "judged": "판정", "unavailable": "근거 없음"}
 
 
@@ -91,8 +81,7 @@ def _headline(
 ) -> str:
     """제목 — interview가 쓴 것을 쓰고, 없거나 너무 길면 원문·slug로 물러난다.
 
-    코드가 문장을 다듬지 않는다(불변식 7). 여기서 하는 건 **고르기**뿐이다 —
-    LLM이 제목 대신 문단을 넣으면 h1이 세 줄이 되므로 그때는 원문이 차라리 낫다.
+    코드가 문장을 다듬지 않는다 (불변식 7) — 여기서 하는 건 고르기뿐이다.
     """
     cleaned = (title or "").strip()
     if cleaned and len(cleaned) <= title_chars:
@@ -215,8 +204,7 @@ def build_report_context(
             no_winner.append(component.name)
 
     deferred = [c for c in components if c.necessity in _DEFERRED_NECESSITY]
-    # "필요 없어서"와 "이미 정해져서"는 다른 섹션이다 — 합치면 사용자가 설계의
-    # 전제를 못 본다 (5-report.md 4번 · 불변식 17).
+    # "필요 없어서"와 "이미 정해져서"는 다른 섹션이다 (불변식 17)
     closed = [
         c
         for c in components
@@ -274,8 +262,7 @@ def build_report_context(
         "architecture": architecture,
         "final_design": final_design,
         "closed": closed,
-        # 제목은 interview가 쓴다 (불변식 7). 길거나 비면 원문으로 물러난다 —
-        # 예전 실행의 interview_json에는 이 키가 아예 없다.
+        # 제목은 interview가 쓴다 (불변식 7). 예전 실행에는 이 키가 아예 없다
         "title": _headline(
             interview.get("title"),
             run.get("description", ""),

@@ -39,7 +39,7 @@ class _TokenBucket:
             self.tokens -= 1
 
 
-# 호스트별 버킷 — GitHub가 바쁘다고 npm까지 같이 느려지면 안 된다.
+# 호스트별 버킷 — GitHub가 바쁘다고 npm까지 느려지면 안 된다
 _buckets: dict[str, _TokenBucket] = {}
 
 
@@ -67,9 +67,8 @@ def _audit(*, url: str, host: str, allowed: bool, settings: Settings) -> None:
 async def check_allowed(url: str, settings: Settings) -> None:
     """allowlist 확인 + 감사로그 기록 + (허용 시) 레이트리밋 대기.
 
-    거부되면 PermissionError. 호출부는 이 예외를 잡아 실패로 취급한다 —
-    scout_net_mcp는 gaps 개념을 모른다(scout를 import하지 않는다); 실패를
-    gaps로 격하하는 건 앱 쪽(search.py, STEP-05)의 책임이다.
+    거부되면 `PermissionError`. 실패를 `gaps`로 격하하는 것은 앱 쪽 책임이다 —
+    이 패키지는 `scout`를 import하지 않는다 (불변식 1).
     """
     host = urlparse(url).hostname or ""
     allowlist = {h.strip() for h in settings.scout_egress_allowlist.split(",") if h.strip()}
