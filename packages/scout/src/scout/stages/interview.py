@@ -30,6 +30,7 @@ from langgraph.graph import END, START, StateGraph
 
 from scout import store
 from scout.llm import invoke_structured
+from scout.progress import while_asking
 from scout.prompts import (
     INTERVIEW_SYNTHESIS_PROMPT,
     INTERVIEW_SYNTHESIS_RETRY_HINT,
@@ -53,12 +54,16 @@ class NonInteractive(Exception):
 
 
 def _default_ask(question: str) -> str:
-    try:
-        # 열 2의 `? ` — 화자를 밝히지 않는다. `?`가 "당신이 답할 차례"를 말하고
-        # 들여쓰기가 [인터뷰] 소속을 말한다 (001/09-출력양식.md).
-        return typer.prompt(f"  ? {question}", default="", show_default=False)
-    except EOFError, typer.Abort:
-        raise NonInteractive from None
+    # stdin을 읽는 함수는 `while_asking()` 안에서 읽는다 (001/09-출력양식.md).
+    # `interview`는 병렬이 아니라 지금은 보류할 줄이 없지만, 규칙을 한 군데만 지키면
+    # 다음 사람이 "왜 여기만?"에서 판단을 다시 하게 된다.
+    with while_asking():
+        try:
+            # 열 2의 `? ` — 화자를 밝히지 않는다. `?`가 "당신이 답할 차례"를 말하고
+            # 들여쓰기가 [인터뷰] 소속을 말한다 (001/09-출력양식.md).
+            return typer.prompt(f"  ? {question}", default="", show_default=False)
+        except EOFError, typer.Abort:
+            raise NonInteractive from None
 
 
 class _InterviewState(TypedDict, total=False):

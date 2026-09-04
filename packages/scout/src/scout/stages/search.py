@@ -340,7 +340,13 @@ async def _search_component(
         step("툴 탐색 한도 도달 — 모은 기록으로 후보를 뽑는다", subject=component.name)
     step("후보 추출", subject=component.name)
 
-    parsed, raw = invoke_structured(
+    # ★ 스레드로 뺀다 — `invoke_structured`는 동기 `.invoke()`라 그냥 부르면 이벤트
+    # 루프를 막는다. 요소를 병렬로 돌리는데 여기서 루프가 멈추면 (1) 다른 요소가 사실상
+    # 순차 실행되고 (2) 그 요소의 웹검색 승인 결과가 루프로 못 돌아와 **사람이 y를
+    # 눌렀는데 몇 초씩 반응이 없다.** `verify`·`evaluate`는 같은 처리를 하고 있다.
+    # store 접근은 루프 스레드에 남긴다 — sqlite 쓰기가 저절로 직렬화된다.
+    parsed, raw = await asyncio.to_thread(
+        invoke_structured,
         SEARCH_EXTRACT_PROMPT,
         llm.with_structured_output(CandidateList, include_raw=True),
         {

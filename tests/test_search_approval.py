@@ -5,18 +5,30 @@
 성격이다 — 판단이 아니라 배선을 본다.
 """
 
+import asyncio
+import threading
+from contextlib import contextmanager
 from typing import ClassVar
 
+import pytest
+import typer
 from langchain_core.tools import StructuredTool
+from scout import approval, progress
 from scout.agentkit import collect_tool_calls
 from scout.approval import (
     APPROVAL_NOTICE,
     Approval,
     NonInteractive,
     SearchGate,
+    auto_approve,
+    default_approve,
     wrap_web_search,
 )
+from scout.progress import step, while_asking
 from scout.stages.search import facts_for_candidate
+
+# Event.wait에 항상 상한을 준다 — 구현이 깨졌을 때 스위트가 매달리는 대신 실패해야 한다.
+_TIMEOUT = 5.0
 
 
 class _SpyTool:
@@ -177,3 +189,101 @@ def test_facts_are_not_attached_to_unrelated_candidate(monkeypatch):
     calls = collect_tool_calls(messages)
 
     assert facts_for_candidate(calls, "ws", now="2026-09-03T00:00:00Z") == []
+
+
+# ── 묻는 동안 화면을 독점한다 (001/09-출력양식.md) ──────────────────────
+
+
+def test_default_approve_holds_progress_lines(monkeypatch, capsys):
+    """★ 창이 `default_approve`에 있다 — 이 배치가 `auto_approve` 분기를 없앤다.
+
+    사람 대역이 답하는 동안 `step()`을 부르고, 반환 전에는 화면이 비어 있고 반환
+    뒤에 찍히는지 본다. 스레드 없이 결정적이다.
+    """
+
+    def confirm(_text, default=False):
+        step("npm_package \"jose\"", subject="인증")
+        assert capsys.readouterr().out == "", "묻는 중에 진행 줄이 질문을 밀어냈다"
+        return True
+
+    monkeypatch.setattr(typer, "confirm", confirm)
+
+    assert default_approve("PG LISTEN NOTIFY vs Redis").approved
+    assert capsys.readouterr().out == '  · 인증 — npm_package "jose"\n'
+
+
+def test_auto_approve_does_not_hold(monkeypatch, capsys):
+    """자동 승인은 창을 열지 않는다 — 답할 사람이 없으면 화면을 독점할 근거가 없다."""
+    opened: list[str] = []
+
+    @contextmanager
+    def spy():
+        opened.append("열림")
+        yield
+
+    monkeypatch.setattr(approval, "while_asking", spy)
+
+    auto_approve("socket.io redis adapter")
+
+    assert opened == [], "자동 승인이 화면을 독점했다"
+    assert "자동 승인" in capsys.readouterr().out
+
+
+def test_non_interactive_still_flushes(monkeypatch, capsys):
+    """★ `finally` 누락 회귀의 유일한 방어선.
+
+    `default_approve`는 `NonInteractive`를 던진다. 예외 경로에서 flush를 빼먹으면
+    **남은 실행 전체가 조용해진다** — 원래 버그보다 나쁘다.
+    """
+
+    def confirm(_text, default=False):
+        step("보류된 줄")
+        raise EOFError
+
+    monkeypatch.setattr(typer, "confirm", confirm)
+
+    with pytest.raises(NonInteractive):
+        default_approve("무엇이든")
+
+    assert capsys.readouterr().out == "  · 보류된 줄\n", "예외 경로에서 줄이 사라졌다"
+    assert progress._hold_depth == 0, "예외 경로에서 창이 닫히지 않았다"
+
+
+async def test_second_question_never_overlaps_the_first(capsys):
+    """★ 다음 승인 문의는 보류 창 안에서 찍히지 않는다 — 질문은 한 번에 하나다.
+
+    두 근거가 각각 독립적이다. (1) `check`가 `_lock`을 프롬프트 내내 잡으므로 요소 B는
+    질문을 **시작조차** 못 한다 (2) 질문은 `typer.confirm`이 직접 찍으므로 `step()`
+    버퍼에 애초에 들어가지 않는다.
+
+    지금은 성립하지만 누가 `_lock`의 임계구역을 좁히면 조용히 깨진다 — 그래서 고정한다.
+    """
+    order: list[str] = []
+    first_asking = threading.Event()
+    release_first = threading.Event()
+
+    def approve(query: str) -> Approval:
+        order.append(f"묻기 시작 {query}")
+        with while_asking():
+            if query == "첫째":
+                first_asking.set()
+                assert release_first.wait(_TIMEOUT), "둘째가 확인을 마치지 못했다"
+        order.append(f"답 완료 {query}")
+        return Approval(True)
+
+    gate = SearchGate(approve=approve)
+
+    async def observer() -> None:
+        assert await asyncio.to_thread(first_asking.wait, _TIMEOUT)
+        # 첫 질문이 열려 있는 지금, 둘째는 _lock에 막혀 시작조차 안 됐어야 한다
+        assert order == ["묻기 시작 첫째"], f"둘째 질문이 겹쳤다: {order}"
+        release_first.set()
+
+    await asyncio.gather(gate.check("첫째"), gate.check("둘째"), observer())
+
+    assert order == [
+        "묻기 시작 첫째",
+        "답 완료 첫째",
+        "묻기 시작 둘째",
+        "답 완료 둘째",
+    ], f"질문이 직렬로 흐르지 않았다: {order}"

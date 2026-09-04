@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 import typer
 from langchain_core.tools import StructuredTool
 
-from scout.progress import step
+from scout.progress import step, while_asking
 
 if TYPE_CHECKING:
     from langchain_core.tools import BaseTool
@@ -49,12 +49,19 @@ class NonInteractive(Exception):
 
 
 def default_approve(query: str) -> Approval:
-    try:
-        if typer.confirm(APPROVAL_NOTICE.format(query=query), default=False):
-            return Approval(approved=True)
-        reason = typer.prompt("  ? 거부 사유", default="", show_default=False)
-    except EOFError, typer.Abort:  # PEP 758 (3.14) — 괄호 없는 다중 예외
-        raise NonInteractive from None
+    """묻는 동안 화면을 독점한다 — `while_asking()`이 병렬 요소의 진행 줄을 붙잡는다.
+
+    이 함수가 `search`에서 `asyncio.to_thread` 워커로 도는 동안 이벤트 루프는 계속
+    돌기 때문에(`SearchGate.check` 참고), 창이 없으면 다른 요소의 `·` 줄이 질문을
+    화면 위로 밀어낸다. 승인과 거부 사유가 **한 창 안**에 들어간다.
+    """
+    with while_asking():
+        try:
+            if typer.confirm(APPROVAL_NOTICE.format(query=query), default=False):
+                return Approval(approved=True)
+            reason = typer.prompt("  ? 거부 사유", default="", show_default=False)
+        except EOFError, typer.Abort:  # PEP 758 (3.14) — 괄호 없는 다중 예외
+            raise NonInteractive from None
     return Approval(approved=False, reason=reason.strip() or "(사유 없음)")
 
 
@@ -63,6 +70,8 @@ def auto_approve(query: str) -> Approval:
 
     무엇이 나갔는지는 그대로 찍는다 — 승인을 건너뛴다고 내용을 감추면 게이트의
     의미가 준다.
+
+    `while_asking()`을 쓰지 않는다 — 답할 사람이 없으니 화면을 독점할 근거가 없다.
     """
     step(f'인터넷 검색 "{query}" — 자동 승인')
     return Approval(approved=True)
@@ -98,7 +107,13 @@ class SearchGate:
                 return Approval(False, "이 실행에서는 웹검색을 쓸 수 없습니다")
             try:
                 # 프롬프트를 스레드로 넘긴다 — 이벤트 루프를 막으면 다른 요소의
-                # in-flight HTTP가 응답을 못 읽고 타임아웃에 걸린다.
+                # in-flight HTTP가 응답을 못 읽고 타임아웃에 걸린다. 그래서 루프가 계속
+                # 도는 동안의 **화면 독점**은 여기가 아니라 `default_approve`의
+                # `while_asking()`이 맡는다 (001/09-출력양식.md).
+                #
+                # ★ 이 락이 프롬프트 **내내** 잡혀 있어야 한다. 두 번째 요소의 check()가
+                # 여기서 막혀 질문을 아예 시작하지 못하는 것이 곧 "질문은 한 번에
+                # 하나"의 근거다 — 임계구역을 좁히면 두 질문이 화면에서 겹친다.
                 approval = await asyncio.to_thread(self.approve, query)
             except NonInteractive:
                 self.blocked = True
