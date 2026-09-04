@@ -257,6 +257,29 @@ def audit(
     return warnings
 
 
+_HEADLINE_CHARS = 20
+
+
+def audit_headlines(picks: Sequence[ElementPick]) -> list[str]:
+    """보고서 표는 winner_reason의 첫 문장만 잘라서 보여준다 — 첫머리가 같으면
+    어느 행이 무슨 결정인지 알 수 없다.
+
+    `solo_pick`은 LLM이 쓴 문장이 아니라 고정 문구라 제외한다.
+    """
+    seen: dict[str, list[str]] = {}
+    for pick in picks:
+        if not pick.scores:
+            continue
+        head = " ".join(pick.winner_reason.split())[:_HEADLINE_CHARS]
+        seen.setdefault(head, []).append(pick.component)
+    return [
+        f"winner_reason 첫머리가 같다 ({', '.join(names)}): '{head}…' — "
+        "보고서 표에서 행이 구분되지 않는다"
+        for head, names in seen.items()
+        if len(names) >= 2
+    ]
+
+
 def solo_pick(component_name: str, verdict: Verdict) -> ElementPick:
     """통과 후보가 하나면 비교할 대상이 없다 — LLM을 부르지 않는다."""
     return ElementPick(
@@ -624,6 +647,9 @@ def evaluate_node(state: ScoutState, *, llm: ChatBedrockConverse) -> dict:
     if not picks:
         store.add_gap(slug, "evaluate", "1위가 없어 설계 확정을 건너뜀")
         return {"element_picks": picks}
+
+    for warning in audit_headlines(picks):
+        store.add_gap(slug, "evaluate", warning)
 
     architecture = state.get("architecture") or store.get_design(slug)
     if architecture is None:

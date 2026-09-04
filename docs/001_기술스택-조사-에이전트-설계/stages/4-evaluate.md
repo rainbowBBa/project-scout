@@ -79,7 +79,7 @@ class ElementPick(BaseModel):
     scores: list[CandidateScore]   # 통과 후보 전원
     ranking: list[str]             # overall 내림차순. 동점은 maturity → 이름 순
     winner: str
-    winner_reason: str             # ★ 제약 인용 + 2위와의 점수 차이
+    winner_reason: str             # ★ 후보 고유 근거로 시작 + 제약 인용 + 점수 차이
     runner_up_note: str
     margin: Literal["decisive", "close"]   # 1위·2위 차이
 ```
@@ -142,15 +142,28 @@ overall 차이 <= 1  →  "close"
 "1위가 socket.io"와 "socket.io 4 vs ws 3"은 의사결정에서 완전히 다른 정보다.
 후보가 2~3개뿐인 프로토타입 규모에서 특히 값어치 있다.
 
-#### `winner_reason`에 들어가야 하는 것 두 가지
+#### `winner_reason` — 첫 문장이 그 후보만의 것이어야 한다
+
+들어가야 하는 것 셋. **순서가 규칙이다.**
 
 ```
-1. refined_brief 의 제약 인용
-2. 2위와의 점수 차이
+1. 첫 문장: 그 후보를 고르게 만든 fact_id 값 또는 판정문 표현
+2. refined_brief 의 제약 인용 — 근거를 잇는 절로 (문장을 이것으로 시작하지 않는다)
+3. 2위와의 overall 점수 차이 (숫자로)
 ```
 
-> "socket.io를 골랐다. `overall` 4 vs ws 3 — 재연결·룸이 내장돼 3인 팀 3개월에
-> 구현 부담이 작다."
+보고서 표는 **첫 문장만** 잘라서 보여준다([5-report.md](5-report.md)). 제약 인용을
+1번으로 두면 LLM이 그것으로 문장을 시작해 결정 지점마다 첫 줄이 같아지고, 표에서
+어느 행이 무슨 결정인지 사라진다.
+
+> "gh.issue_close_rate=0.98로 Streamlit(0.81)보다 문제 해결이 빠르고, Hugging Face
+> Spaces 즉시 배포가 1~2일 데드라인에 맞는다. overall 5 대 5 동점이나 maturity 5
+> 기준으로 앞선다."
+
+**프롬프트만으로는 못 막는다** — 파이프라인이 정상으로 돌기 때문에 조용히 되돌아간다.
+`audit_headlines`가 결정 지점들의 첫 `_HEADLINE_CHARS`자를 대조해 겹치면 `gaps`에
+남긴다. 후보가 하나뿐인 픽(`solo_pick`)은 문구가 고정이라 제외한다.
+`test_winner_reason`이 프롬프트 지시와 코드 검출을 함께 본다.
 
 ### 4. 설계 확정 — LLM 1회 (요소 수와 무관)
 
@@ -407,6 +420,7 @@ final_designs (slug PK, summary, shape, data_flow, changes_from_design_json,
 | dossier 숫자가 없어 계산 불가 | `score = NULL`, `source = "unavailable"` |
 | `winner`가 `ranking[0]`과 불일치 | 구조 검증에서 잡고 1회 재시도 |
 | `winner_reason`에 제약 인용 없음 | 경고 로그. 프로토타입에서는 통과시킨다 |
+| **`winner_reason` 첫머리가 결정 지점마다 같음** | `audit_headlines`가 `gaps`에 남긴다. 보고서 표는 첫 문장만 보여주므로 행이 구분되지 않는다 |
 | `overall`이 `maturity`·`risk`의 평균과 같음 | 경고 로그 — 프롬프트 반례가 안 먹혔다는 신호 |
 | `ranking`이 `overall` 내림차순이 아님 | 코드가 재정렬. 동점은 `maturity` → 이름 순 |
 | 구조화 출력 파싱 실패 | `include_raw=True`로 원본 확보 후 1회 재시도 |
